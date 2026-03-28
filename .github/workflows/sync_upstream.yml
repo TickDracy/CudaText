@@ -1,0 +1,48 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    - cron: '45 23 * * 6'  # Every day Saturday at 23:45 UTC
+  workflow_dispatch: 
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/Alexey-T/CudaText.git
+          git fetch upstream master
+
+      - name: Check for differences
+        id: diff_check
+        run: |
+          UPSTREAM_COMMIT=$(git rev-parse upstream/master)
+          FORK_COMMIT=$(git rev-parse origin/master)
+
+          echo "Upstream commit: $UPSTREAM_COMMIT"
+          echo "Fork commit:     $FORK_COMMIT"
+
+          if [ "$UPSTREAM_COMMIT" = "$FORK_COMMIT" ]; then
+            echo "in_sync=true" >> $GITHUB_OUTPUT
+            echo "✅ Fork is already up to date with upstream. Nothing to do."
+          else
+            echo "in_sync=false" >> $GITHUB_OUTPUT
+            echo "🔄 Differences detected. Proceeding with sync..."
+          fi
+
+      - name: Merge upstream into fork
+        if: steps.diff_check.outputs.in_sync == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git merge upstream/master --no-edit
+          git push origin master
+          echo "✅ Fork successfully synced with upstream."
