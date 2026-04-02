@@ -1348,6 +1348,7 @@ const
   StatusbarTag_SelMode = 16;
   StatusbarTag_WrapMode = 17;
   StatusbarTag_Zoom = 18;
+  StatusbarTag_ReadOnly = 19;
   StatusbarTag_Msg = 20;
 
 const
@@ -2517,8 +2518,8 @@ begin
       end;
     StatusbarTag_SelMode:
       begin
-        with Frame.Editor do
-          OptMouseColumnSelectionWithoutKey:= not OptMouseColumnSelectionWithoutKey;
+        //don't change property, call command, to support macro-recording
+        Frame.Editor.DoCommand(cCommand_MouseColSelectWithoutKey_Toggle, TATCommandInvoke.Hotkey);
         UpdateStatusbar_RealWork;
       end;
     StatusbarTag_WrapMode:

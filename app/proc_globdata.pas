@@ -993,6 +993,7 @@ type
     OnScroll,
     OnMouseStop,
     OnClick,
+    OnClickPre,
     OnClickDbl,
     OnClickGutter,
     OnClickGap,
@@ -1067,6 +1068,7 @@ const
     'on_scroll',
     'on_mouse_stop',
     'on_click',
+    'on_click_pre',
     'on_click_dbl',
     'on_click_gutter',
     'on_click_gap',
@@ -2308,7 +2310,7 @@ begin
     StatusColSel:= '{sel}x{cols} {_sel}';
     StatusCarets:= '{carets} {_carets}, {sel} {_linesel}';
 
-    StatusPanels:= 'caret,C,180|enc,C,125|ends,A,|lexer,C,140|tabsize,A,|selmode,A,|msg,L,';
+    StatusPanels:= 'caret,C,180|enc,C,125|ends,A,|lexer,C,140|tabsize,A,|msg,L,';
     StatusTime:= 5;
     StatusHeightPercents:= 180;
     StatusHeightMin:= 20;
