@@ -100,8 +100,11 @@ jobs:
             exit 1
           }
 
-          # Parse asset URL from the saved JSON file
-          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPath',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
+          # Parse asset URL from the saved JSON file.
+          # Replace backslashes so Windows path doesn't create Python Unicode
+          # escape sequences (\U, \A, etc.) inside the -c string.
+          $jsonPathFwd = $jsonPath -replace '\\\\','/'
+          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPathFwd',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
 
           if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
             Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
