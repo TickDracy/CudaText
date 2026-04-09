@@ -70,31 +70,44 @@ jobs:
       # installaware.com/lazarus-arm64.msi blocks CI/datacenter IPs with 403.
       # The MSI must be pre-hosted as a release asset on this fork.
       # See the PRE-REQUISITE comment at the top of this file.
+      #
+      # NOTE: curl output is written to a temp file rather than captured into a
+      # PowerShell variable. Variable capture of curl.exe stdout is unreliable
+      # on Windows due to encoding/buffering; file-based reads are always clean.
       - name: Download Lazarus ARM64 MSI from fork release cache
         id: download_msi
         env:
           GH_TOKEN: ${{ github.token }}
         shell: powershell
         run: |
-          $repo    = "$env:GITHUB_REPOSITORY"
-          $tag     = "$env:TOOLCHAIN_RELEASE_TAG"
-          $msiPath = "$env:TEMP\lazarus-arm64.msi"
+          $repo     = $env:GITHUB_REPOSITORY
+          $tag      = $env:TOOLCHAIN_RELEASE_TAG
+          $msiPath  = "$env:TEMP\lazarus-arm64.msi"
+          $jsonPath = "$env:TEMP\release-info.json"
 
           Write-Host "Fetching release asset list for tag '$tag' in $repo ..."
 
-          $releaseJson = curl.exe -fsSL `
+          # Write JSON response to a file to avoid PowerShell variable-capture issues
+          curl.exe -fsSL `
             -H "Accept: application/vnd.github+json" `
             -H "Authorization: Bearer $env:GH_TOKEN" `
+            -o $jsonPath `
             "https://api.github.com/repos/$repo/releases/tags/$tag"
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::Release tagged '$tag' not found in $repo."
+            Write-Host "::error::Release tagged '$tag' not found in $repo (curl exit $LASTEXITCODE)."
             Write-Host "::error::Please follow the PRE-REQUISITE steps at the top of build-windows-arm64.yml."
             exit 1
           }
 
-          $assetUrl = ($releaseJson | python3 -c `
-            "import sys,json; a=[x for x in json.load(sys.stdin).get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')")
+          # Parse asset URL from the saved JSON file
+          $assetUrl = python3 -c @"
+import json, sys
+with open(r'$jsonPath', encoding='utf-8') as f:
+    data = json.load(f)
+assets = [a for a in data.get('assets', []) if a['name'] == 'lazarus-arm64.msi']
+print(assets[0]['url'] if assets else '')
+"@
 
           if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
             Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
@@ -102,7 +115,7 @@ jobs:
             exit 1
           }
 
-          Write-Host "Downloading MSI from release asset..."
+          Write-Host "Downloading MSI from release asset ..."
           curl.exe -fsSL `
             -H "Accept: application/octet-stream" `
             -H "Authorization: Bearer $env:GH_TOKEN" `
