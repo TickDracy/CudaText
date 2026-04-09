@@ -1,0 +1,227 @@
+name: Build Windows ARM64 CudaText
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for Windows ARM64
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+
+    steps:
+      # ── 1. Resolve latest CudaText release tag from upstream ──────────
+      - name: Get latest CudaText release tag
+        id: release_tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/Alexey-T/CudaText/releases/latest" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release tag: $TAG"
+
+      # ── 2. Checkout the upstream repo at the latest release tag ───────
+      - name: Checkout upstream at latest release tag
+        uses: actions/checkout@v4
+        with:
+          repository: Alexey-T/CudaText
+          ref: ${{ steps.release_tag.outputs.tag }}
+          path: upstream_src
+          fetch-depth: 1
+
+      # ── 3. Extract CudaText version from source ──────────────────────
+      - name: Get CudaText version
+        id: version
+        shell: bash
+        run: |
+          VER=$(grep -oE "cAppExeVersion\s*=\s*'[^']+'" upstream_src/app/proc_msg.pas \
+                | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+                || echo "unknown")
+          echo "cudatext_version=$VER" >> "$GITHUB_OUTPUT"
+          echo "CudaText version: $VER"
+
+      # ── 4. Install Lazarus ARM64 (patched FPC) via InstallAware MSI ──
+      # Vanilla FPC does not fully support Win-ARM64. This MSI provides
+      # a ready-built patched FPC+Lazarus that just works on ARM64 Windows.
+      # Source: https://www.installaware.com/lazarus-arm64.msi
+      - name: Install Lazarus ARM64
+        shell: powershell
+        run: |
+          $msiUrl  = "https://www.installaware.com/lazarus-arm64.msi"
+          $msiPath = "$env:TEMP\lazarus-arm64.msi"
+          $logPath = "$env:TEMP\lazarus-arm64-install.log"
+
+          Write-Host "Downloading Lazarus ARM64 MSI..."
+          Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+
+          Write-Host "Running installer (silent)..."
+          $proc = Start-Process msiexec.exe `
+            -ArgumentList "/i `"$msiPath`" /quiet /norestart /l*v `"$logPath`"" `
+            -Wait -PassThru
+
+          if ($proc.ExitCode -ne 0) {
+            Write-Host "=== Install log (last 60 lines) ==="
+            Get-Content $logPath -Tail 60 -ErrorAction SilentlyContinue
+            throw "MSI installation failed (exit code $($proc.ExitCode))"
+          }
+
+          Write-Host "Lazarus ARM64 installed successfully."
+
+      # ── 5. Locate Lazarus + FPC and export paths ─────────────────────
+      # The MSI may install to C:\Lazarus, Program Files, or elsewhere.
+      # We search broadly and export what we find to the step env.
+      - name: Locate Lazarus and configure PATH
+        shell: powershell
+        run: |
+          $searchRoots = @("C:\", "$env:PROGRAMFILES", "$env:LOCALAPPDATA", "$env:APPDATA")
+
+          $lazBuild = $searchRoots | ForEach-Object {
+            Get-ChildItem -Path $_ -Filter "lazbuild.exe" -Recurse -ErrorAction SilentlyContinue
+          } | Select-Object -First 1
+
+          if (-not $lazBuild) {
+            throw "lazbuild.exe not found after Lazarus installation. Search roots: $($searchRoots -join ', ')"
+          }
+
+          $lazDir = $lazBuild.DirectoryName
+          Write-Host "Found lazbuild: $($lazBuild.FullName)"
+
+          # Locate fpc.exe — usually in a sibling fpc/bin/aarch64-win64/ subtree
+          $fpcExe = Get-ChildItem -Path $lazDir -Filter "fpc.exe" -Recurse -ErrorAction SilentlyContinue `
+                    | Select-Object -First 1
+
+          if (-not $fpcExe) {
+            # Widen search to parent of Lazarus dir
+            $fpcExe = Get-ChildItem -Path (Split-Path $lazDir -Parent) `
+                        -Filter "fpc.exe" -Recurse -ErrorAction SilentlyContinue `
+                      | Select-Object -First 1
+          }
+
+          # Add directories to PATH for subsequent steps
+          Add-Content -Path $env:GITHUB_PATH -Value $lazDir
+          if ($fpcExe) {
+            Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
+            Write-Host "Found fpc: $($fpcExe.FullName)"
+          }
+
+          # Export Lazarus dir so the bash compile step can use -l
+          Add-Content -Path $env:GITHUB_ENV -Value "LAZ_DIR=$lazDir"
+
+          # Verify
+          Write-Host "── lazbuild version ──"
+          & "$($lazBuild.FullName)" --version
+
+      # ── 6. Clone CudaText build environment ──────────────────────────
+      - name: Clone CudaText_up
+        run: git clone --depth 1 https://github.com/Alexey-T/CudaText_up
+
+      # ── 7. Download all CudaText sources and dependencies ────────────
+      - name: Download CudaText sources and dependencies
+        working-directory: CudaText_up
+        shell: bash
+        run: ./cudaup.sh -g
+
+      # ── 8. Replace downloaded source with the release checkout ───────
+      - name: Swap source with release checkout
+        shell: bash
+        run: |
+          rm -rf CudaText_up/src/CudaText
+          mv upstream_src CudaText_up/src/CudaText
+
+      # ── 9. Compile CudaText for Windows ARM64 ─────────────────────────
+      # -o win64  : Windows 64-bit target (ARM64 when running on ARM64 host
+      #             with the patched InstallAware FPC)
+      # -c flag is intentionally omitted: cudaup.sh does not accept a CPU
+      #   override for win32/win64 targets (see CudaText_up README).
+      # The patched FPC derives the target CPU from the host automatically.
+      - name: Compile CudaText
+        working-directory: CudaText_up
+        shell: bash
+        run: |
+          ./cudaup.sh -m \
+            -l "$LAZ_DIR" \
+            -o win64 \
+            -w win32
+
+      # ── 10. Locate and verify compiled binary ─────────────────────────
+      - name: Locate and verify compiled binary
+        id: binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Primary expected path (mirrors the .lpi builds/win64 output dir)
+          COMPILED="CudaText_up/bin/win64/cudatext.exe"
+
+          if [ ! -f "$COMPILED" ]; then
+            echo "Binary not at primary path, searching under CudaText_up/ ..."
+            COMPILED=$(find CudaText_up -name "cudatext.exe" -type f 2>/dev/null | head -1 || true)
+          fi
+
+          if [ -z "$COMPILED" ] || [ ! -f "$COMPILED" ]; then
+            echo "::error::cudatext.exe not found anywhere under CudaText_up/"
+            find CudaText_up -name "*.exe" 2>/dev/null || true
+            exit 1
+          fi
+
+          # wc -c is portable across all bash environments including Git Bash
+          COMPILED_SIZE=$(wc -c < "$COMPILED")
+          echo "Compiled binary: $COMPILED ($COMPILED_SIZE bytes)"
+
+          if [ "$COMPILED_SIZE" -lt 1000000 ]; then
+            echo "::error::Binary is suspiciously small ($COMPILED_SIZE bytes) — likely a stub or failed build"
+            exit 1
+          fi
+
+          echo "compiled_path=$COMPILED" >> "$GITHUB_OUTPUT"
+
+      # ── 11. Package as ZIP ───────────────────────────────────────────
+      # Naming follows the upstream SourceForge convention:
+      #   cudatext-windows-{cpu}-{version}.zip
+      # Existing builds: windows-amd64, windows-i386
+      # This build:      windows-aarch64
+      - name: Package ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VER="${{ steps.version.outputs.cudatext_version }}"
+          ZIP_NAME="cudatext-windows-aarch64-${VER}.zip"
+          STAGE="cudatext-windows-aarch64-${VER}"
+          SRC="CudaText_up/src/CudaText/app"
+
+          mkdir -p "$STAGE"
+
+          # Binary
+          cp "${{ steps.binary.outputs.compiled_path }}" "$STAGE/cudatext.exe"
+
+          # Runtime data — mirror the structure of the official Windows zip
+          [ -d "$SRC/data" ] && cp -r "$SRC/data" "$STAGE/"
+          [ -d "$SRC/py"   ] && cp -r "$SRC/py"   "$STAGE/"
+
+          # Write readme.txt
+          printf 'CudaText %s\nhttps://cudatext.github.io\n\nINSTRUCTIONS:\n\n- Extract this folder anywhere and run cudatext.exe.\n\nDocumentation: https://wiki.freepascal.org/CudaText\n' \
+            "$VER" > "$STAGE/readme.txt"
+
+          echo "── Staging directory contents ──"
+          ls -lh "$STAGE/"
+
+          # 7-Zip is pre-installed on GitHub Actions Windows runners
+          7z a -tzip "$ZIP_NAME" "$STAGE/"
+
+          echo "Created: $ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+
+      # ── 12. Upload ZIP artifact ──────────────────────────────────────
+      - name: Upload Windows ARM64 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}
+          path: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}.zip
+          retention-days: 30
+          if-no-files-found: error
