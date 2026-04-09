@@ -243,16 +243,24 @@ jobs:
             }
           }
 
-          # -- 4. where.exe fallback (if MSI added it to PATH) -------------
+          # -- 4. Full recursive drive search via cmd (avoids PS NativeCommandError) --
           if (-not $lazBuild) {
-            $whereLaz = (where.exe lazbuild.exe 2>$null | Select-Object -First 1)
-            if ($whereLaz -and (Test-Path $whereLaz)) {
-              Write-Host "Found via where.exe: $whereLaz"
-              $lazBuild = Get-Item $whereLaz
+            Write-Host "Doing full recursive search for lazbuild.exe on C:\ ..."
+            $found = cmd /c where /r "C:\" lazbuild.exe "2>nul"
+            if ($found -and ($found -is [string]) -and (Test-Path $found)) {
+              Write-Host "Found via recursive search: $found"
+              $lazBuild = Get-Item $found
+            } elseif ($found) {
+              # where /r may return multiple lines; take the first valid one
+              $firstMatch = @($found) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+              if ($firstMatch) {
+                Write-Host "Found via recursive search: $firstMatch"
+                $lazBuild = Get-Item $firstMatch
+              }
             }
           }
 
-          # -- 5. Diagnostics -----------------------------------------------
+          # -- 5. Diagnostics (always run so we can see the filesystem) ----
           Write-Host "-- USERPROFILE: $env:USERPROFILE --"
           Write-Host "-- USERPROFILE subdirs --"
           Get-ChildItem $env:USERPROFILE -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
