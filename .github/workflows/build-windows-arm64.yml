@@ -201,18 +201,24 @@ jobs:
             }
           }
 
-          # -- 3. Shallow scan of C:\ top-level dirs only ----------------
+          # -- 3. One-level scan of C:\ and common install parents ----------
           if (-not $lazBuild) {
-            Write-Host "Doing shallow scan of C:\ top-level directories..."
-            Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-              $exe = Join-Path $_.FullName "lazbuild.exe"
-              if (Test-Path $exe) { $lazBuild = Get-Item $exe }
+            Write-Host "Scanning C:\ top-level and one level under Program Files..."
+            $scanRoots = @("C:\") + @(
+              Get-ChildItem "C:\Program Files","C:\Program Files (x86)" `
+                -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            )
+            foreach ($dir in $scanRoots) {
+              $exe = Join-Path $dir "lazbuild.exe"
+              if (Test-Path $exe) { $lazBuild = Get-Item $exe; break }
             }
           }
 
-          # -- 4. List all top-level C:\ dirs for diagnostics ------------
+          # -- 4. Diagnostics: list C:\ and Program Files subdirs ---------
           Write-Host "-- C:\ top-level dirs --"
-          Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -HideTableHeaders
+          Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+          Write-Host "-- C:\Program Files subdirs --"
+          Get-ChildItem "C:\Program Files" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
 
           if (-not $lazBuild) {
             throw "lazbuild.exe not found. See directory listing above for clues."
