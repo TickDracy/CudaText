@@ -190,6 +190,15 @@ jobs:
                 $displayName = $_.GetValue("DisplayName")
                 if ($displayName -match "Lazarus|FPC|FreePascal") {
                   $installLoc = $_.GetValue("InstallLocation")
+                  # InstallAware often leaves InstallLocation blank; fall back to UninstallString
+                  if (-not $installLoc) {
+                    $uninstStr = $_.GetValue("UninstallString")
+                    if ($uninstStr) {
+                      # Strip leading quote and take the directory of the uninstaller exe
+                      $uninstExe = $uninstStr.Trim('"').Split('"')[0]
+                      $installLoc = Split-Path $uninstExe -Parent
+                    }
+                  }
                   Write-Host "Registry match: '$displayName' -> '$installLoc'"
                   if ($installLoc) {
                     $exe = Join-Path $installLoc "lazbuild.exe"
@@ -198,6 +207,26 @@ jobs:
                 }
               }
               if ($lazBuild) { break }
+            }
+          }
+
+          # -- 2b. Scan user-profile install locations -------------------
+          if (-not $lazBuild) {
+            Write-Host "Scanning user-profile and AppData locations..."
+            $profileRoots = @(
+              "$env:USERPROFILE\Lazarus",
+              "$env:LOCALAPPDATA\Lazarus",
+              "$env:LOCALAPPDATA\Programs\Lazarus",
+              "$env:APPDATA\Lazarus"
+            )
+            # Also scan every direct subdir of the user profile
+            $profileRoots += @(
+              Get-ChildItem $env:USERPROFILE -Directory -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+            )
+            foreach ($dir in $profileRoots) {
+              $exe = Join-Path $dir "lazbuild.exe"
+              if (Test-Path $exe) { $lazBuild = Get-Item $exe; break }
             }
           }
 
@@ -214,7 +243,19 @@ jobs:
             }
           }
 
-          # -- 4. Diagnostics: list C:\ and Program Files subdirs ---------
+          # -- 4. where.exe fallback (if MSI added it to PATH) -------------
+          if (-not $lazBuild) {
+            $whereLaz = (where.exe lazbuild.exe 2>$null | Select-Object -First 1)
+            if ($whereLaz -and (Test-Path $whereLaz)) {
+              Write-Host "Found via where.exe: $whereLaz"
+              $lazBuild = Get-Item $whereLaz
+            }
+          }
+
+          # -- 5. Diagnostics -----------------------------------------------
+          Write-Host "-- USERPROFILE: $env:USERPROFILE --"
+          Write-Host "-- USERPROFILE subdirs --"
+          Get-ChildItem $env:USERPROFILE -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
           Write-Host "-- C:\ top-level dirs --"
           Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
           Write-Host "-- C:\Program Files subdirs --"
