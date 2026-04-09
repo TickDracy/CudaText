@@ -148,22 +148,80 @@ jobs:
           Write-Host "Lazarus ARM64 installed successfully."
 
       # ── 6. Locate Lazarus + FPC and export paths ─────────────────────
+      # The InstallAware MSI installs to a known fixed location. We check the
+      # most likely paths first, then fall back to the registry install record,
+      # then do a targeted (non-recursive) drive scan as a last resort.
       - name: Locate Lazarus and configure PATH
         shell: powershell
         run: |
-          $searchRoots = @("C:\", "$env:PROGRAMFILES", "$env:LOCALAPPDATA", "$env:APPDATA")
+          # ── 1. Check well-known fixed install paths ──────────────────
+          $candidates = @(
+            "C:\Lazarus",
+            "C:\lazarus",
+            "C:\FPC\Lazarus",
+            "C:\fpc\lazarus",
+            "C:\LazarusARM64",
+            "C:\Program Files\Lazarus",
+            "C:\Program Files (x86)\Lazarus",
+            "$env:LOCALAPPDATA\Lazarus",
+            "$env:APPDATA\Lazarus"
+          )
 
-          $lazBuild = $searchRoots | ForEach-Object {
-            Get-ChildItem -Path $_ -Filter "lazbuild.exe" -Recurse -ErrorAction SilentlyContinue
-          } | Select-Object -First 1
+          $lazBuild = $null
+          foreach ($dir in $candidates) {
+            $exe = Join-Path $dir "lazbuild.exe"
+            if (Test-Path $exe) {
+              $lazBuild = Get-Item $exe
+              Write-Host "Found lazbuild at known path: $exe"
+              break
+            }
+          }
+
+          # ── 2. Check MSI install location from registry ───────────────
+          if (-not $lazBuild) {
+            Write-Host "Not in known paths — checking registry for MSI install location..."
+            $regRoots = @(
+              "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+            )
+            foreach ($root in $regRoots) {
+              Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object {
+                $displayName = $_.GetValue("DisplayName")
+                if ($displayName -match "Lazarus|FPC|FreePascal") {
+                  $installLoc = $_.GetValue("InstallLocation")
+                  Write-Host "Registry match: '$displayName' -> '$installLoc'"
+                  if ($installLoc) {
+                    $exe = Join-Path $installLoc "lazbuild.exe"
+                    if (Test-Path $exe) { $lazBuild = Get-Item $exe }
+                  }
+                }
+              }
+              if ($lazBuild) { break }
+            }
+          }
+
+          # ── 3. Shallow scan of C:\ top-level dirs only ────────────────
+          if (-not $lazBuild) {
+            Write-Host "Doing shallow scan of C:\ top-level directories..."
+            Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              $exe = Join-Path $_.FullName "lazbuild.exe"
+              if (Test-Path $exe) { $lazBuild = Get-Item $exe }
+            }
+          }
+
+          # ── 4. List all top-level C:\ dirs for diagnostics ────────────
+          Write-Host "── C:\ top-level dirs ──"
+          Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -HideTableHeaders
 
           if (-not $lazBuild) {
-            throw "lazbuild.exe not found after installation. Searched: $($searchRoots -join ', ')"
+            throw "lazbuild.exe not found. See directory listing above for clues."
           }
 
           $lazDir = $lazBuild.DirectoryName
           Write-Host "Found lazbuild: $($lazBuild.FullName)"
 
+          # Locate fpc.exe relative to lazbuild
           $fpcExe = Get-ChildItem -Path $lazDir -Filter "fpc.exe" -Recurse -ErrorAction SilentlyContinue `
                     | Select-Object -First 1
           if (-not $fpcExe) {
