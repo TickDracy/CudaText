@@ -128,13 +128,18 @@ jobs:
           echo "msi_path=$msiPath" >> $env:GITHUB_OUTPUT
 
       # -- 5. Install Lazarus ARM64 (patched FPC) -------------------------
+      # The MSI is an InstallAware wrapper that spawns fpcupdeluxe as a child
+      # process to download and build FPC + Lazarus from source. msiexec exits
+      # quickly while fpcupdeluxe continues running in the background.
+      # We run the inner installer directly so we can wait on it properly.
       - name: Install Lazarus ARM64
         shell: powershell
         run: |
           $msiPath = "${{ steps.download_msi.outputs.msi_path }}"
           $logPath = "$env:TEMP\lazarus-arm64-install.log"
 
-          Write-Host "Running installer (silent)..."
+          # Run MSI and wait - this launches fpcupdeluxe in the background
+          Write-Host "Running MSI wrapper (silent)..."
           $proc = Start-Process msiexec.exe `
             -ArgumentList "/i `"$msiPath`" /quiet /norestart /l*v `"$logPath`"" `
             -Wait -PassThru
@@ -142,159 +147,74 @@ jobs:
           if ($proc.ExitCode -ne 0) {
             Write-Host "=== Install log (last 80 lines) ==="
             Get-Content $logPath -Tail 80 -ErrorAction SilentlyContinue
-            throw "MSI installation failed (exit code $($proc.ExitCode))"
+            throw "MSI failed (exit code $($proc.ExitCode))"
           }
 
+          Write-Host "MSI exited. Waiting for fpcupdeluxe child process to finish..."
+
+          # The MSI drops fpcupdeluxe into C:\fpcupdeluxe and runs it.
+          # Poll for lazbuild.exe to appear - timeout after 55 minutes.
+          $targetExe = "C:\fpcupdeluxe\lazarus\lazbuild.exe"
+          $deadline  = (Get-Date).AddMinutes(55)
+          $elapsed   = 0
+
+          while (-not (Test-Path $targetExe)) {
+            if ((Get-Date) -gt $deadline) {
+              Write-Host "::error::Timed out waiting for $targetExe after 55 minutes"
+              # Show what did land under C:\fpcupdeluxe for diagnostics
+              if (Test-Path "C:\fpcupdeluxe") {
+                Get-ChildItem "C:\fpcupdeluxe" -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                  Select-Object FullName | Format-Table -HideTableHeaders
+              }
+              exit 1
+            }
+            if ($elapsed % 60 -eq 0) {
+              Write-Host "Still waiting... ($elapsed s elapsed)"
+            }
+            Start-Sleep -Seconds 10
+            $elapsed += 10
+          }
+
+          Write-Host "lazbuild.exe found at: $targetExe"
           Write-Host "Lazarus ARM64 installed successfully."
 
-      # -- 6. Locate Lazarus + FPC and export paths ---------------------
-      # The InstallAware MSI installs to a known fixed location. We check the
-      # most likely paths first, then fall back to the registry install record,
-      # then do a targeted (non-recursive) drive scan as a last resort.
+      # -- 6. Configure PATH with known install locations ------------------
       - name: Locate Lazarus and configure PATH
         shell: powershell
         run: |
-          # -- 1. Check well-known fixed install paths ------------------
-          $candidates = @(
-            "C:\Lazarus",
-            "C:\lazarus",
-            "C:\FPC\Lazarus",
-            "C:\fpc\lazarus",
-            "C:\LazarusARM64",
-            "C:\Program Files\Lazarus",
-            "C:\Program Files (x86)\Lazarus",
-            "$env:LOCALAPPDATA\Lazarus",
-            "$env:APPDATA\Lazarus"
-          )
+          # fpcupdeluxe installs to C:\fpcupdeluxe\ (hardcoded by the MSI).
+          # The MSI wrapper (InstallAware) installs the launcher to
+          # C:\Program Files\Lazarus ARM64 but the actual Lazarus + FPC
+          # binaries land under C:\fpcupdeluxe\ after fpcupdeluxe finishes.
+          $lazDir = "C:\fpcupdeluxe\lazarus"
+          $fpcDir = "C:\fpcupdeluxe\fpc\bin\aarch64-win64"
 
-          $lazBuild = $null
-          foreach ($dir in $candidates) {
-            $exe = Join-Path $dir "lazbuild.exe"
-            if (Test-Path $exe) {
-              $lazBuild = Get-Item $exe
-              Write-Host "Found lazbuild at known path: $exe"
-              break
-            }
-          }
-
-          # -- 2. Check MSI install location from registry ---------------
-          if (-not $lazBuild) {
-            Write-Host "Not in known paths - checking registry for MSI install location..."
-            $regRoots = @(
-              "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-              "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-            )
-            foreach ($root in $regRoots) {
-              Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object {
-                $displayName = $_.GetValue("DisplayName")
-                if ($displayName -match "Lazarus|FPC|FreePascal") {
-                  $installLoc = $_.GetValue("InstallLocation")
-                  # InstallAware often leaves InstallLocation blank; fall back to UninstallString
-                  if (-not $installLoc) {
-                    $uninstStr = $_.GetValue("UninstallString")
-                    if ($uninstStr) {
-                      # Strip leading quote and take the directory of the uninstaller exe
-                      $uninstExe = $uninstStr.Trim('"').Split('"')[0]
-                      $installLoc = Split-Path $uninstExe -Parent
-                    }
-                  }
-                  Write-Host "Registry match: '$displayName' -> '$installLoc'"
-                  if ($installLoc) {
-                    $exe = Join-Path $installLoc "lazbuild.exe"
-                    if (Test-Path $exe) { $lazBuild = Get-Item $exe }
-                  }
-                }
-              }
-              if ($lazBuild) { break }
-            }
-          }
-
-          # -- 2b. Scan user-profile install locations -------------------
-          if (-not $lazBuild) {
-            Write-Host "Scanning user-profile and AppData locations..."
-            $profileRoots = @(
-              "$env:USERPROFILE\Lazarus",
-              "$env:LOCALAPPDATA\Lazarus",
-              "$env:LOCALAPPDATA\Programs\Lazarus",
-              "$env:APPDATA\Lazarus"
-            )
-            # Also scan every direct subdir of the user profile
-            $profileRoots += @(
-              Get-ChildItem $env:USERPROFILE -Directory -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty FullName
-            )
-            foreach ($dir in $profileRoots) {
-              $exe = Join-Path $dir "lazbuild.exe"
-              if (Test-Path $exe) { $lazBuild = Get-Item $exe; break }
-            }
-          }
-
-          # -- 3. One-level scan of C:\ and common install parents ----------
-          if (-not $lazBuild) {
-            Write-Host "Scanning C:\ top-level and one level under Program Files..."
-            $scanRoots = @("C:\") + @(
-              Get-ChildItem "C:\Program Files","C:\Program Files (x86)" `
-                -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-            )
-            foreach ($dir in $scanRoots) {
-              $exe = Join-Path $dir "lazbuild.exe"
-              if (Test-Path $exe) { $lazBuild = Get-Item $exe; break }
-            }
-          }
-
-          # -- 4. Full recursive drive search via cmd (avoids PS NativeCommandError) --
-          if (-not $lazBuild) {
-            Write-Host "Doing full recursive search for lazbuild.exe on C:\ ..."
-            $found = cmd /c where /r "C:\" lazbuild.exe "2>nul"
-            if ($found -and ($found -is [string]) -and (Test-Path $found)) {
-              Write-Host "Found via recursive search: $found"
-              $lazBuild = Get-Item $found
-            } elseif ($found) {
-              # where /r may return multiple lines; take the first valid one
-              $firstMatch = @($found) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-              if ($firstMatch) {
-                Write-Host "Found via recursive search: $firstMatch"
-                $lazBuild = Get-Item $firstMatch
-              }
-            }
-          }
-
-          # -- 5. Diagnostics (always run so we can see the filesystem) ----
-          Write-Host "-- USERPROFILE: $env:USERPROFILE --"
-          Write-Host "-- USERPROFILE subdirs --"
-          Get-ChildItem $env:USERPROFILE -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-          Write-Host "-- C:\ top-level dirs --"
-          Get-ChildItem "C:\" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-          Write-Host "-- C:\Program Files subdirs --"
-          Get-ChildItem "C:\Program Files" -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-
-          if (-not $lazBuild) {
-            throw "lazbuild.exe not found. See directory listing above for clues."
-          }
-
-          $lazDir = $lazBuild.DirectoryName
-          Write-Host "Found lazbuild: $($lazBuild.FullName)"
-
-          # Locate fpc.exe relative to lazbuild
-          $fpcExe = Get-ChildItem -Path $lazDir -Filter "fpc.exe" -Recurse -ErrorAction SilentlyContinue `
-                    | Select-Object -First 1
-          if (-not $fpcExe) {
-            $fpcExe = Get-ChildItem -Path (Split-Path $lazDir -Parent) `
-                        -Filter "fpc.exe" -Recurse -ErrorAction SilentlyContinue `
-                      | Select-Object -First 1
+          # Verify lazbuild exists (should already be confirmed by the install step)
+          if (-not (Test-Path "$lazDir\lazbuild.exe")) {
+            throw "lazbuild.exe not found at expected path: $lazDir\lazbuild.exe"
           }
 
           Add-Content -Path $env:GITHUB_PATH -Value $lazDir
-          if ($fpcExe) {
-            Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
-            Write-Host "Found fpc: $($fpcExe.FullName)"
+
+          # fpc.exe location - try known path first, then search under fpcupdeluxe
+          if (Test-Path "$fpcDir\fpc.exe") {
+            Add-Content -Path $env:GITHUB_PATH -Value $fpcDir
+            Write-Host "Found fpc at: $fpcDir\fpc.exe"
+          } else {
+            $fpcExe = Get-ChildItem "C:\fpcupdeluxe\fpc\bin" -Filter "fpc.exe" -Recurse `
+                        -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($fpcExe) {
+              Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
+              Write-Host "Found fpc at: $($fpcExe.FullName)"
+            } else {
+              Write-Host "::warning::fpc.exe not found under C:\fpcupdeluxe\fpc\bin"
+            }
           }
 
           Add-Content -Path $env:GITHUB_ENV -Value "LAZ_DIR=$lazDir"
 
           Write-Host "-- lazbuild version --"
-          & "$($lazBuild.FullName)" --version
+          & "$lazDir\lazbuild.exe" --version
 
       # -- 7. Clone CudaText build environment --------------------------
       - name: Clone CudaText_up
