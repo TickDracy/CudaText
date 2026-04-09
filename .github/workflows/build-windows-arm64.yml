@@ -82,8 +82,10 @@ jobs:
         run: |
           $repo     = $env:GITHUB_REPOSITORY
           $tag      = $env:TOOLCHAIN_RELEASE_TAG
-          $msiPath  = "$env:TEMP\lazarus-arm64.msi"
-          $jsonPath = "$env:TEMP\release-info.json"
+          # Use Join-Path so the paths are always built with the OS separator,
+          # then convert to forward slashes once so Python -c never sees \U etc.
+          $msiPath  = (Join-Path $env:TEMP "lazarus-arm64.msi")
+          $jsonPath = (Join-Path $env:TEMP "release-info.json") -replace "\\","/"
 
           Write-Host "Fetching release asset list for tag '$tag' in $repo ..."
 
@@ -101,10 +103,9 @@ jobs:
           }
 
           # Parse asset URL from the saved JSON file.
-          # Replace backslashes so Windows path doesn't create Python Unicode
-          # escape sequences (\U, \A, etc.) inside the -c string.
-          $jsonPathFwd = $jsonPath -replace '\\\\','/'
-          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPathFwd',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
+          # $jsonPath already uses forward slashes (set at definition above),
+          # so Python's open() won't misread backslashes as escape sequences.
+          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPath',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
 
           if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
             Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
