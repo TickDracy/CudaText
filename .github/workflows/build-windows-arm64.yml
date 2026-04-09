@@ -101,13 +101,7 @@ jobs:
           }
 
           # Parse asset URL from the saved JSON file
-          $assetUrl = python3 -c @"
-import json, sys
-with open(r'$jsonPath', encoding='utf-8') as f:
-    data = json.load(f)
-assets = [a for a in data.get('assets', []) if a['name'] == 'lazarus-arm64.msi']
-print(assets[0]['url'] if assets else '')
-"@
+          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPath',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
 
           if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
             Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
