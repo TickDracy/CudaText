@@ -11,7 +11,7 @@ name: Build Windows ARM64 CudaText
 #   1. On your local machine, download:
 #        https://www.installaware.com/lazarus-arm64.msi
 #   2. On YOUR FORK, create a GitHub Release tagged "toolchain-cache"
-#      (Title: "Toolchain cache – do not delete").
+#      (Title: "Toolchain cache - do not delete").
 #   3. Upload lazarus-arm64.msi as a release asset to that release.
 #   4. The workflow fetches it from there on every run via the GitHub API.
 #
@@ -179,7 +179,7 @@ jobs:
 
           # -- 2. Check MSI install location from registry ---------------
           if (-not $lazBuild) {
-            Write-Host "Not in known paths — checking registry for MSI install location..."
+            Write-Host "Not in known paths - checking registry for MSI install location..."
             $regRoots = @(
               "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
               "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -260,7 +260,7 @@ jobs:
 
       # -- 10. Compile CudaText for Windows ARM64 -------------------------
       # -o win64 : Windows 64-bit OS target.
-      # -c flag  : intentionally omitted — cudaup.sh ignores it for win64.
+      # -c flag  : intentionally omitted - cudaup.sh ignores it for win64.
       #            The patched ARM64 FPC (from the MSI) uses the native host
       #            CPU (aarch64) automatically; no explicit override needed.
       - name: Compile CudaText
@@ -282,7 +282,7 @@ jobs:
           COMPILED="CudaText_up/bin/win64/cudatext.exe"
 
           if [ ! -f "$COMPILED" ]; then
-            echo "Binary not at primary path — searching under CudaText_up/ ..."
+            echo "Binary not at primary path - searching under CudaText_up/ ..."
             COMPILED=$(find CudaText_up -name "cudatext.exe" -type f 2>/dev/null | head -1 || true)
           fi
 
@@ -297,7 +297,7 @@ jobs:
           echo "Compiled binary: $COMPILED ($COMPILED_SIZE bytes)"
 
           if [ "$COMPILED_SIZE" -lt 1000000 ]; then
-            echo "::error::Binary is suspiciously small ($COMPILED_SIZE bytes) — likely a stub or failed build"
+            echo "::error::Binary is suspiciously small ($COMPILED_SIZE bytes) - likely a stub or failed build"
             exit 1
           fi
 
