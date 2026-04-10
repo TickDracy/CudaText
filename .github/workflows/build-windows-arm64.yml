@@ -265,6 +265,8 @@ jobs:
           Write-Host "All packages built successfully."
 
       # -- 11. Compile CudaText for Windows ARM64 -------------------------
+      # Use the project's "windows aarch64" build mode which has all the
+      # correct settings for ARM64 cross-compilation already configured.
       - name: Compile CudaText for ARM64
         shell: powershell
         run: |
@@ -272,11 +274,8 @@ jobs:
           $lazbuild = "$lazDir\lazbuild.exe"
 
           $flags = @(
-            "--os=win64",
-            "--cpu=aarch64",
-            "--ws=win32",
+            "--build-mode=windows aarch64",
             "--lazarusdir=$lazDir",
-            "--build-mode=Release",
             "src/CudaText/app/cudatext.lpi"
           )
 
