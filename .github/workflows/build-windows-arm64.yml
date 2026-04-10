@@ -323,14 +323,16 @@ jobs:
 
           echo "compiled_path=$COMPILED" >> "$GITHUB_OUTPUT"
 
-      # -- 13. Package as ZIP -------------------------------------------
-      - name: Package ZIP
+      # -- 13. Stage files for artifact upload ----------------------------
+      # Prepare the distribution directory. upload-artifact will handle
+      # compression automatically — no need to create a ZIP ourselves.
+      - name: Stage files for artifact
+        id: stage
         shell: bash
         run: |
           set -euo pipefail
 
           VER="${{ steps.version.outputs.cudatext_version }}"
-          ZIP_NAME="cudatext-windows-aarch64-${VER}.zip"
           STAGE="cudatext-windows-aarch64-${VER}"
           SRC="CudaText_up/src/CudaText/app"
 
@@ -347,16 +349,14 @@ jobs:
           echo "-- Staging directory contents --"
           ls -lh "$STAGE/"
 
-          7z a -tzip "$ZIP_NAME" "$STAGE/"
+          echo "stage_dir=$STAGE" >> "$GITHUB_OUTPUT"
 
-          echo "Created: $ZIP_NAME"
-          ls -lh "$ZIP_NAME"
-
-      # -- 14. Upload ZIP artifact --------------------------------------
-      - name: Upload Windows ARM64 ZIP
+      # -- 14. Upload artifact --------------------------------------------
+      # upload-artifact creates the ZIP automatically from the directory.
+      - name: Upload Windows ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}
-          path: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}.zip
+          path: ${{ steps.stage.outputs.stage_dir }}/
           retention-days: 30
           if-no-files-found: error
