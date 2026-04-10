@@ -1,0 +1,322 @@
+name: Build Windows ARM64 CudaText
+
+# -----------------------------------------------------------------------------
+# PRE-REQUISITE (one-time manual step):
+#
+# The installaware.com/lazarus-arm64.msi (patched FPC + Lazarus for Windows
+# ARM64) blocks automated downloads from cloud/CI IPs.  You must download it
+# manually once and host it where GitHub Actions can reach it.
+#
+# Steps:
+#   1. On your local machine, download:
+#        https://www.installaware.com/lazarus-arm64.msi
+#   2. On YOUR FORK, create a GitHub Release tagged "toolchain-cache"
+#      (Title: "Toolchain cache - do not delete").
+#   3. Upload lazarus-arm64.msi as a release asset to that release.
+#   4. The workflow fetches it from there on every run via the GitHub API.
+#
+# The release tag is controlled by the TOOLCHAIN_RELEASE_TAG env var below.
+# -----------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+
+env:
+  TOOLCHAIN_RELEASE_TAG: toolchain-cache
+
+jobs:
+  build:
+    name: Build for Windows ARM64
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+
+    steps:
+      # -- 1. Resolve latest CudaText release tag from upstream ----------
+      - name: Get latest CudaText release tag
+        id: release_tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/Alexey-T/CudaText/releases/latest" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release tag: $TAG"
+
+      # -- 2. Checkout the upstream repo at the latest release tag -------
+      - name: Checkout upstream at latest release tag
+        uses: actions/checkout@v4
+        with:
+          repository: Alexey-T/CudaText
+          ref: ${{ steps.release_tag.outputs.tag }}
+          path: upstream_src
+          fetch-depth: 1
+
+      # -- 3. Extract CudaText version from source ----------------------
+      - name: Get CudaText version
+        id: version
+        shell: bash
+        run: |
+          VER=$(grep -oE "cAppExeVersion\s*=\s*'[^']+'" upstream_src/app/proc_msg.pas \
+                | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+                || echo "unknown")
+          echo "cudatext_version=$VER" >> "$GITHUB_OUTPUT"
+          echo "CudaText version: $VER"
+
+      # -- 4. Download cached Lazarus ARM64 MSI from this fork's releases -
+      # installaware.com/lazarus-arm64.msi blocks CI/datacenter IPs with 403.
+      # The MSI must be pre-hosted as a release asset on this fork.
+      # See the PRE-REQUISITE comment at the top of this file.
+      #
+      # NOTE: curl output is written to a temp file rather than captured into a
+      # PowerShell variable. Variable capture of curl.exe stdout is unreliable
+      # on Windows due to encoding/buffering; file-based reads are always clean.
+      - name: Download Lazarus ARM64 MSI from fork release cache
+        id: download_msi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: |
+          $repo     = $env:GITHUB_REPOSITORY
+          $tag      = $env:TOOLCHAIN_RELEASE_TAG
+          # Use Join-Path so the paths are always built with the OS separator,
+          # then convert to forward slashes once so Python -c never sees \U etc.
+          $msiPath  = (Join-Path $env:TEMP "lazarus-arm64.msi")
+          $jsonPath = (Join-Path $env:TEMP "release-info.json") -replace "\\","/"
+
+          Write-Host "Fetching release asset list for tag '$tag' in $repo ..."
+
+          # Write JSON response to a file to avoid PowerShell variable-capture issues
+          curl.exe -fsSL `
+            -H "Accept: application/vnd.github+json" `
+            -H "Authorization: Bearer $env:GH_TOKEN" `
+            -o $jsonPath `
+            "https://api.github.com/repos/$repo/releases/tags/$tag"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Release tagged '$tag' not found in $repo (curl exit $LASTEXITCODE)."
+            Write-Host "::error::Please follow the PRE-REQUISITE steps at the top of build-windows-arm64.yml."
+            exit 1
+          }
+
+          # Parse asset URL from the saved JSON file.
+          # $jsonPath already uses forward slashes (set at definition above),
+          # so Python's open() won't misread backslashes as escape sequences.
+          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPath',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
+
+          if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
+            Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
+            Write-Host "::error::Upload lazarus-arm64.msi to the '$tag' release on your fork."
+            exit 1
+          }
+
+          Write-Host "Downloading MSI from release asset ..."
+          curl.exe -fsSL `
+            -H "Accept: application/octet-stream" `
+            -H "Authorization: Bearer $env:GH_TOKEN" `
+            -L -o $msiPath $assetUrl
+
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $msiPath)) {
+            throw "Download of lazarus-arm64.msi failed."
+          }
+
+          $sizeMB = [Math]::Round((Get-Item $msiPath).Length / 1MB, 1)
+          Write-Host "Downloaded lazarus-arm64.msi ($sizeMB MB)"
+          echo "msi_path=$msiPath" >> $env:GITHUB_OUTPUT
+
+      # -- 5. Install Lazarus ARM64 (patched FPC) -------------------------
+      # The MSI is an InstallAware wrapper that spawns fpcupdeluxe as a child
+      # process to download and build FPC + Lazarus from source. msiexec exits
+      # quickly while fpcupdeluxe continues running in the background.
+      # We run the inner installer directly so we can wait on it properly.
+      - name: Install Lazarus ARM64
+        shell: powershell
+        run: |
+          $msiPath = "${{ steps.download_msi.outputs.msi_path }}"
+          $logPath = "$env:TEMP\lazarus-arm64-install.log"
+
+          # Run MSI and wait - this launches fpcupdeluxe in the background
+          Write-Host "Running MSI wrapper (silent)..."
+          $proc = Start-Process msiexec.exe `
+            -ArgumentList "/i `"$msiPath`" /quiet /norestart /l*v `"$logPath`"" `
+            -Wait -PassThru
+
+          if ($proc.ExitCode -ne 0) {
+            Write-Host "=== Install log (last 80 lines) ==="
+            Get-Content $logPath -Tail 80 -ErrorAction SilentlyContinue
+            throw "MSI failed (exit code $($proc.ExitCode))"
+          }
+
+          Write-Host "MSI exited. Waiting for fpcupdeluxe child process to finish..."
+
+          # The MSI drops fpcupdeluxe into C:\fpcupdeluxe and runs it.
+          # Poll for lazbuild.exe to appear - timeout after 55 minutes.
+          $targetExe = "C:\fpcupdeluxe\lazarus\lazbuild.exe"
+          $deadline  = (Get-Date).AddMinutes(55)
+          $elapsed   = 0
+
+          while (-not (Test-Path $targetExe)) {
+            if ((Get-Date) -gt $deadline) {
+              Write-Host "::error::Timed out waiting for $targetExe after 55 minutes"
+              # Show what did land under C:\fpcupdeluxe for diagnostics
+              if (Test-Path "C:\fpcupdeluxe") {
+                Get-ChildItem "C:\fpcupdeluxe" -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+                  Select-Object FullName | Format-Table -HideTableHeaders
+              }
+              exit 1
+            }
+            if ($elapsed % 60 -eq 0) {
+              Write-Host "Still waiting... ($elapsed s elapsed)"
+            }
+            Start-Sleep -Seconds 10
+            $elapsed += 10
+          }
+
+          Write-Host "lazbuild.exe found at: $targetExe"
+          Write-Host "Lazarus ARM64 installed successfully."
+
+      # -- 6. Configure PATH with known install locations ------------------
+      - name: Locate Lazarus and configure PATH
+        shell: powershell
+        run: |
+          # fpcupdeluxe installs to C:\fpcupdeluxe\ (hardcoded by the MSI).
+          # The MSI wrapper (InstallAware) installs the launcher to
+          # C:\Program Files\Lazarus ARM64 but the actual Lazarus + FPC
+          # binaries land under C:\fpcupdeluxe\ after fpcupdeluxe finishes.
+          $lazDir = "C:\fpcupdeluxe\lazarus"
+          $fpcDir = "C:\fpcupdeluxe\fpc\bin\aarch64-win64"
+
+          # Verify lazbuild exists (should already be confirmed by the install step)
+          if (-not (Test-Path "$lazDir\lazbuild.exe")) {
+            throw "lazbuild.exe not found at expected path: $lazDir\lazbuild.exe"
+          }
+
+          Add-Content -Path $env:GITHUB_PATH -Value $lazDir
+
+          # fpc.exe location - try known path first, then search under fpcupdeluxe
+          if (Test-Path "$fpcDir\fpc.exe") {
+            Add-Content -Path $env:GITHUB_PATH -Value $fpcDir
+            Write-Host "Found fpc at: $fpcDir\fpc.exe"
+          } else {
+            $fpcExe = Get-ChildItem "C:\fpcupdeluxe\fpc\bin" -Filter "fpc.exe" -Recurse `
+                        -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($fpcExe) {
+              Add-Content -Path $env:GITHUB_PATH -Value $fpcExe.DirectoryName
+              Write-Host "Found fpc at: $($fpcExe.FullName)"
+            } else {
+              Write-Host "::warning::fpc.exe not found under C:\fpcupdeluxe\fpc\bin"
+            }
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "LAZ_DIR=$lazDir"
+
+          Write-Host "-- lazbuild version --"
+          & "$lazDir\lazbuild.exe" --version
+
+      # -- 7. Clone CudaText build environment --------------------------
+      - name: Clone CudaText_up
+        run: git clone --depth 1 https://github.com/Alexey-T/CudaText_up
+
+      # -- 8. Download all CudaText sources and dependencies ------------
+      - name: Download CudaText sources and dependencies
+        working-directory: CudaText_up
+        shell: bash
+        run: ./cudaup.sh -g
+
+      # -- 9. Replace downloaded source with the release checkout -------
+      - name: Swap source with release checkout
+        shell: bash
+        run: |
+          rm -rf CudaText_up/src/CudaText
+          mv upstream_src CudaText_up/src/CudaText
+
+      # -- 10. Compile CudaText for Windows ARM64 -------------------------
+      # -o win64 : Windows 64-bit OS target.
+      # -c flag  : intentionally omitted - cudaup.sh ignores it for win64.
+      #            The patched ARM64 FPC (from the MSI) uses the native host
+      #            CPU (aarch64) automatically; no explicit override needed.
+      - name: Compile CudaText
+        working-directory: CudaText_up
+        shell: bash
+        run: |
+          ./cudaup.sh -m \
+            -l "$LAZ_DIR" \
+            -o win64 \
+            -w win32 \
+            -c aarch64
+
+      # -- 11. Locate and verify compiled binary -------------------------
+      - name: Locate and verify compiled binary
+        id: binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          COMPILED="CudaText_up/bin/win64/cudatext.exe"
+
+          if [ ! -f "$COMPILED" ]; then
+            echo "Binary not at primary path - searching under CudaText_up/ ..."
+            COMPILED=$(find CudaText_up -name "cudatext.exe" -type f 2>/dev/null | head -1 || true)
+          fi
+
+          if [ -z "$COMPILED" ] || [ ! -f "$COMPILED" ]; then
+            echo "::error::cudatext.exe not found anywhere under CudaText_up/"
+            find CudaText_up -name "*.exe" 2>/dev/null || true
+            exit 1
+          fi
+
+          # wc -c is portable across all bash environments including Git Bash
+          COMPILED_SIZE=$(wc -c < "$COMPILED")
+          echo "Compiled binary: $COMPILED ($COMPILED_SIZE bytes)"
+
+          if [ "$COMPILED_SIZE" -lt 1000000 ]; then
+            echo "::error::Binary is suspiciously small ($COMPILED_SIZE bytes) - likely a stub or failed build"
+            exit 1
+          fi
+
+          echo "compiled_path=$COMPILED" >> "$GITHUB_OUTPUT"
+
+      # -- 12. Package as ZIP -------------------------------------------
+      # Naming follows the upstream SourceForge convention:
+      #   cudatext-windows-{cpu}-{version}.zip
+      # Existing: windows-amd64, windows-i386
+      # This:     windows-aarch64
+      - name: Package ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VER="${{ steps.version.outputs.cudatext_version }}"
+          ZIP_NAME="cudatext-windows-aarch64-${VER}.zip"
+          STAGE="cudatext-windows-aarch64-${VER}"
+          SRC="CudaText_up/src/CudaText/app"
+
+          mkdir -p "$STAGE"
+
+          cp "${{ steps.binary.outputs.compiled_path }}" "$STAGE/cudatext.exe"
+
+          [ -d "$SRC/data" ] && cp -r "$SRC/data" "$STAGE/"
+          [ -d "$SRC/py"   ] && cp -r "$SRC/py"   "$STAGE/"
+
+          printf 'CudaText %s\nhttps://cudatext.github.io\n\nINSTRUCTIONS:\n\n- Extract this folder anywhere and run cudatext.exe.\n\nDocumentation: https://wiki.freepascal.org/CudaText\n' \
+            "$VER" > "$STAGE/readme.txt"
+
+          echo "-- Staging directory contents --"
+          ls -lh "$STAGE/"
+
+          7z a -tzip "$ZIP_NAME" "$STAGE/"
+
+          echo "Created: $ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+
+      # -- 13. Upload ZIP artifact --------------------------------------
+      - name: Upload Windows ARM64 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}
+          path: cudatext-windows-aarch64-${{ steps.version.outputs.cudatext_version }}.zip
+          retention-days: 30
+          if-no-files-found: error
