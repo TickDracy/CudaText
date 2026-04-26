@@ -178,7 +178,7 @@ object SyntAnal6: TLibSyntAnalyzer
       DisplayName = 'URL w/o quotes'
       StyleName = 'String'
       TokenType = 4
-      Expression = '(?-i)(?<=\burl\x20*\() [^\)\n\r]+'
+      Expression = '(?<=\burl\x20*\()[^\)\n\r]+'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -201,8 +201,8 @@ object SyntAnal6: TLibSyntAnalyzer
     item
       DisplayName = 'Prop user'
       StyleName = 'Prop user'
-      TokenType = 2
-      Expression = '\-\-\w[\w\-]*'
+      TokenType = 9
+      Expression = '\-\-[a-z][\w\-]*'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -228,7 +228,7 @@ object SyntAnal6: TLibSyntAnalyzer
       StyleName = 'Style suffix'
       BlockName = '{'
       NotParent = True
-      TokenType = 2
+      TokenType = 16
       Expression = ':{1,2}[a-z\-][\w\-]*'
       ColumnFrom = 0
       ColumnTo = 0
@@ -256,7 +256,7 @@ object SyntAnal6: TLibSyntAnalyzer
       DisplayName = 'PHP tag'
       StyleName = 'PHP tag'
       TokenType = 8
-      Expression = '<\?php\b | <\? | \?>'
+      Expression = '<\?php\b|<\?|\?>'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -272,7 +272,7 @@ object SyntAnal6: TLibSyntAnalyzer
       DisplayName = '@Media'
       StyleName = 'Media'
       TokenType = 5
-      Expression = '@[\w\-]+'
+      Expression = '@[a-z][\w\-]*'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -288,24 +288,34 @@ object SyntAnal6: TLibSyntAnalyzer
       DisplayName = 'Value'
       StyleName = 'Value'
       BlockName = '{'
-      TokenType = 2
+      TokenType = 14
       Expression = '\w[\w\-]*'
+      ColumnFrom = 0
+      ColumnTo = 0
+    end
+    item
+      DisplayName = 'Media keyword'
+      StyleName = 'Media'
+      TokenType = 15
+      Expression = '\b(and|not|only|print|screen|all|speech)\b'
       ColumnFrom = 0
       ColumnTo = 0
     end
     item
       DisplayName = 'Name'
       StyleName = 'Style'
+      BlockName = '@media {'
+      NotParent = True
       TokenType = 2
-      Expression = '\-[\w\-]+ | \w(\\.|[\w\-])*'
+      Expression = '\-[\w\-]+|[a-z](\\.|[\w\-])*'
       ColumnFrom = 0
       ColumnTo = 0
     end
     item
-      DisplayName = '!important'
+      DisplayName = 'Value !important'
       StyleName = 'Value'
-      TokenType = 2
-      Expression = '!(important)\b'
+      TokenType = 14
+      Expression = '!important\b'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -313,7 +323,7 @@ object SyntAnal6: TLibSyntAnalyzer
       DisplayName = 'Symbol'
       StyleName = 'Symbol'
       TokenType = 3
-      Expression = '\]\]> | [;:,%\(\)\[\]@=/\*<>\-\+!\^\$\|~]'
+      Expression = '\]\]>|[;,:%\(\)\[\]@=/\*<>\-\+!\^\$\|~]'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -2360,7 +2370,7 @@ object SyntAnal6: TLibSyntAnalyzer
         end
         item
           CondType = tcSkip
-          TokenTypes = 5788
+          TokenTypes = 54940
         end
         item
           TokenTypes = 32
@@ -2382,15 +2392,23 @@ object SyntAnal6: TLibSyntAnalyzer
           TagList.Strings = (
             '{')
           TokenTypes = 1
+        end
+        item
+          CondType = tcSkip
+          TokenTypes = 65536
+        end
+        item
+          TokenTypes = 4
         end>
       BlockEnd = '}'
       Highlight = True
       InvertColors = True
-      DisplayInTree = False
-      NameFmt = 'CSS'
-      DynHighlight = dhRange
+      NameFmt = '%s0~[{]1'
+      RefToCondEnd = True
       HighlightPos = cpRange
       DynSelectMin = True
+      CancelNextRules = True
+      DrawStaple = True
       CollapseFmt = '{ ... }'
       TreeItemImage = 4
       IgnoreAsParent = False
@@ -2410,7 +2428,7 @@ object SyntAnal6: TLibSyntAnalyzer
       IgnoreAsParent = False
     end
     item
-      DisplayName = 'Colors hex'
+      DisplayName = 'Colors'
       ConditionList = <
         item
           TokenTypes = 64
@@ -2419,23 +2437,6 @@ object SyntAnal6: TLibSyntAnalyzer
       HighlightPos = cpAny
       NoEndRule = True
       TreeItemImage = 7
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'Colors func names'
-      ConditionList = <
-        item
-          TokenTypes = 8192
-        end>
-      BlockEnd = ')'
-      EndOfTextClose = True
-      NotCollapsed = True
-      NameFmt = '%s0~[)]'
-      GroupFmt = '\Colors'
-      RefToCondEnd = True
-      HighlightPos = cpAny
-      CancelNextRules = True
-      TreeItemImage = 6
       IgnoreAsParent = False
     end
     item
@@ -2450,6 +2451,7 @@ object SyntAnal6: TLibSyntAnalyzer
         item
           TagList.Strings = (
             'url')
+          IgnoreCase = True
         end>
       BlockEnd = 'Images end'
       NameFmt = '%s-1~s[)]1'
@@ -2465,18 +2467,6 @@ object SyntAnal6: TLibSyntAnalyzer
           TagList.Strings = (
             ')')
           TokenTypes = 32
-        end>
-      HighlightPos = cpAny
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = ')'
-      BlockType = btRangeEnd
-      ConditionList = <
-        item
-          TagList.Strings = (
-            ')')
-          TokenTypes = 8
         end>
       HighlightPos = cpAny
       IgnoreAsParent = False
@@ -2507,7 +2497,7 @@ object SyntAnal6: TLibSyntAnalyzer
       '@media screen and (-ms-high-contrast: active), (-ms-high-contras' +
       't: none) {'
     '    .input_size_m .input__control {'
-    '        border-left: 10px solid transparent'
+    '        border-left: 10px solid transparent !important'
     '   }'
     '}'
     ''
@@ -2535,10 +2525,13 @@ object SyntAnal6: TLibSyntAnalyzer
     'Number'
     'PHP tag'
     'Prop'
-    'ValueUnit'
+    'Value unit'
     'Media special'
     'Prop others'
-    'Color func name')
+    '(none)'
+    'Value'
+    'Media keyword'
+    'Suffix')
   Extentions = 'css'
   LexerName = 'CSS'
   Notes.Strings = (
