@@ -1318,12 +1318,20 @@ end;
 
 
 function TfmMain.FindDialog_GetButtonsPyDict: PPyObject;
+var
+  MenuMore: PPyObject;
 begin
   with AppPython.Engine do
   begin
     if not Assigned(fmFind) then
       exit(ReturnNone);
-    Result:= Py_BuildValue('{sOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsO}',
+
+    if Assigned(fmFind.FPopupMore) then
+      MenuMore:= PyHelper_ObjectHandle(fmFind.FPopupMore.Items)
+    else
+      MenuMore:= ReturnNone;
+
+    Result:= Py_BuildValue('{sOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsOsO}',
       'FindFirst', PyHelper_ObjectHandle(fmFind.bFindFirst),
       'FindNext', PyHelper_ObjectHandle(fmFind.bFindNext),
       'FindPrev', PyHelper_ObjectHandle(fmFind.bFindPrev),
@@ -1342,7 +1350,10 @@ begin
       'Confirm', PyHelper_ObjectHandle(fmFind.chkConfirm),
       'Hi', PyHelper_ObjectHandle(fmFind.chkHiAll),
       'Im', PyHelper_ObjectHandle(fmFind.chkImmediate),
-      'PreserveCase', PyHelper_ObjectHandle(fmFind.chkPreserveCase)
+      'PreserveCase', PyHelper_ObjectHandle(fmFind.chkPreserveCase),
+      'MenuMore', MenuMore,
+      'EditorFind', PyHelper_ObjectHandle(fmFind.edFind),
+      'EditorReplace', PyHelper_ObjectHandle(fmFind.edRep)
       );
   end;
 end;
