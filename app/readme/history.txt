@@ -5,7 +5,7 @@
 
 1.234.3 (2026/05)
 
-* change/add: UI-theme item 'EdCaret' replaced with 'EdCarets': 1) it allows 'none color' to re-use text font color, 2) it has different logic, this color is the _final_ color of the caret (before it was a XOR-value) (thanks @SN-CH)
+* change/add: UI-theme field 'EdCaret' (in the theme files in the folder "data/themes") is ignored now. New field is 'EdCarets' (with final 's'). New field supports value 'none color' (which is default) - it will re-use the text font color. New field sets the _final_ color of the caret (before it was a XOR-value), so you can set now e.g. red or green caret. (thanks @SN-CH)
 - fix: option "auto_fold_comments" did not work for multi-line string/comment if it begins after other tokens on a line (thanks @pintassilgo)
 
 1.234.2 (2026/04)
