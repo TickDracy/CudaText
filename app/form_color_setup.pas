@@ -285,7 +285,10 @@ var
 begin
   //disable "None color" button to some elements
   NSel:= ListColors.ItemIndex;
-  bNone.Enabled:= (NSel>=0) and (AppTheme.Colors[TAppThemeColor(NSel)].enabledNone);
+  bNone.Enabled:=
+    (NSel>=0) and
+    (NSel<=Ord(High(TAppThemeColor))) and
+    (AppTheme.Colors[TAppThemeColor(NSel)].enabledNone);
 end;
 
 procedure TfmColorSetup.ListStylesDblClick(Sender: TObject);
