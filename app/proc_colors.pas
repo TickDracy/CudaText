@@ -330,12 +330,12 @@ const
 
 procedure AppThemeInit_UI(var D: TAppTheme);
   //
-  procedure SetColor(AId: TAppThemeColor; AColor: TColor; const AName, ADesc: string; AEnabledNone: boolean=false); inline;
+  procedure SetColor(AId: TAppThemeColor; AColor: TColor; const AName, ADesc: string); inline;
   begin
     D.Colors[AId].color:= AColor;
     D.Colors[AId].name:= AName;
     D.Colors[AId].desc:= ADesc;
-    D.Colors[AId].enabledNone:= AEnabledNone;
+    D.Colors[AId].enabledNone:= (AColor=clNone);
   end;
   //
 begin
@@ -347,10 +347,10 @@ begin
   SetColor(TAppThemeColor.EdDisableBg, $e0e0e0, 'EdDisableBg', 'editor, disabled state, BG');
   SetColor(TAppThemeColor.EdLinks, $c05050, 'EdLinks', 'editor, links');
   SetColor(TAppThemeColor.EdLockedBg, nColorGutterBack, 'EdLockedBg', 'editor, locked state, BG');
-  SetColor(TAppThemeColor.EdCaret, clNone, 'EdCarets', 'editor, caret', true);
+  SetColor(TAppThemeColor.EdCaret, clNone, 'EdCarets', 'editor, caret');
   SetColor(TAppThemeColor.EdMarkers, $6060d0, 'EdMarkers', 'editor, markers');
   SetColor(TAppThemeColor.EdCurLineBg, $e0e0d0, 'EdCurLineBg', 'editor, current line BG');
-  SetColor(TAppThemeColor.EdCurLineBg2, clNone, 'EdCurLineBg2', 'editor, current line BG, other wrapped parts', true);
+  SetColor(TAppThemeColor.EdCurLineBg2, clNone, 'EdCurLineBg2', 'editor, current line BG, other wrapped parts');
   SetColor(TAppThemeColor.EdIndentVLine, clMedGray, 'EdIndentVLine', 'editor, wrapped line indent vert-lines');
   SetColor(TAppThemeColor.EdUnprintFont, $a0a0b8, 'EdUnprintFont', 'editor, unprinted chars, font');
   SetColor(TAppThemeColor.EdUnprintBg, $e0e0e0, 'EdUnprintBg', 'editor, unprinted chars, BG');
@@ -366,7 +366,7 @@ begin
   SetColor(TAppThemeColor.EdStateAdded, $80a080, 'EdStateAdded', 'editor, line states, added');
   SetColor(TAppThemeColor.EdStateSaved, clMedGray, 'EdStateSaved', 'editor, line states, saved');
   SetColor(TAppThemeColor.EdBlockStaple, $b0b0b0, 'EdBlockStaple', 'editor, block staples (indent guides)');
-  SetColor(TAppThemeColor.EdBlockStapleActive, clNone, 'EdBlockStapleActive', 'editor, block staples, for caret', true);
+  SetColor(TAppThemeColor.EdBlockStapleActive, clNone, 'EdBlockStapleActive', 'editor, block staples, for caret');
   SetColor(TAppThemeColor.EdComboArrow, nColorArrow, 'EdComboArrow', 'editor, combobox arrow-down');
   SetColor(TAppThemeColor.EdComboArrowBg, nColorBack, 'EdComboArrowBg', 'editor, combobox arrow-down BG');
   SetColor(TAppThemeColor.EdBorder, nColorBorder, 'EdBorder', 'editor, border');
@@ -391,14 +391,14 @@ begin
   SetColor(TAppThemeColor.EdBookmarkBg, clMoneyGreen, 'EdBookmarkBg', 'editor, bookmark, line BG');
   SetColor(TAppThemeColor.EdBookmarkIcon, clMedGray, 'EdBookmarkIcon', 'editor, bookmark, gutter mark');
   SetColor(TAppThemeColor.EdMarkedRangeBg, $f0e0b0, 'EdMarkedRangeBg', 'editor, marked range BG / info panels BG');
-  SetColor(TAppThemeColor.OtherTextFont, clNone, 'OtherTextFont', 'single-line inputs, font', true);
-  SetColor(TAppThemeColor.OtherTextBg, clNone, 'OtherTextBg', 'single-line inputs, BG', true);
+  SetColor(TAppThemeColor.OtherTextFont, clNone, 'OtherTextFont', 'single-line inputs, font');
+  SetColor(TAppThemeColor.OtherTextBg, clNone, 'OtherTextBg', 'single-line inputs, BG');
   SetColor(TAppThemeColor.TabBg, nColorBack2, 'TabBg', 'main-toolbar, tabs BG');
   SetColor(TAppThemeColor.SideBg, $808080, 'SideBg', 'side-toolbar BG');
   SetColor(TAppThemeColor.SideBadgeBg, clNavy, 'SideBadgeBg', 'side-toolbar, button badges BG');
   SetColor(TAppThemeColor.SideBadgeFont, clWhite, 'SideBadgeFont', 'side-toolbar, button badges font');
   SetColor(TAppThemeColor.TabFont, nColorText, 'TabFont', 'tabs, font');
-  SetColor(TAppThemeColor.TabFontActive, clNone, 'TabFontActive', 'tabs, font, active tab', true);
+  SetColor(TAppThemeColor.TabFontActive, clNone, 'TabFontActive', 'tabs, font, active tab');
   SetColor(TAppThemeColor.TabFontMod, $a00000, 'TabFontMod', 'tabs, font, modified tab');
   SetColor(TAppThemeColor.TabActive, nColorBack, 'TabActive', 'tabs, active tab BG');
   SetColor(TAppThemeColor.TabActiveOthers, $e4d0d0, 'TabActiveOthers', 'tabs, active tab BG, inactive groups');
@@ -406,7 +406,7 @@ begin
   SetColor(TAppThemeColor.TabOver, $ffffff, 'TabOver', 'tabs, mouse-over tab BG');
   SetColor(TAppThemeColor.TabBorderActive, nColorBorder, 'TabBorderActive', 'tabs, active tab border');
   SetColor(TAppThemeColor.TabBorderPassive, nColorBorder, 'TabBorderPassive', 'tabs, passive tab border');
-  SetColor(TAppThemeColor.TabCloseBg, clNone, 'TabCloseBg', 'tabs, close button BG', true);
+  SetColor(TAppThemeColor.TabCloseBg, clNone, 'TabCloseBg', 'tabs, close button BG');
   SetColor(TAppThemeColor.TabCloseBgOver, $9090c0, 'TabCloseBgOver', 'tabs, close button BG, mouse-over');
   SetColor(TAppThemeColor.TabCloseBorderOver, $9090c0, 'TabCloseBorderOver', 'tabs, close button border');
   SetColor(TAppThemeColor.TabCloseX, nColorArrow, 'TabCloseX', 'tabs, close x mark');
@@ -438,13 +438,13 @@ begin
   SetColor(TAppThemeColor.ButtonBorderPassive, nColorBorder, 'ButtonBorderPassive', 'buttons, border, passive');
   SetColor(TAppThemeColor.ButtonBorderOver, nColorBorder, 'ButtonBorderOver', 'buttons, border, mouse-over');
   SetColor(TAppThemeColor.ButtonBorderFocused, clGray, 'ButtonBorderFocused', 'buttons, border, focused');
-  SetColor(TAppThemeColor.MenuFont, clNone, 'MenuFont', 'top menu, font', true);
-  SetColor(TAppThemeColor.MenuFontHotkey, clNone, 'MenuFontHotkey', 'top menu, font, hotkey', true);
-  SetColor(TAppThemeColor.MenuFontDisabled, clNone, 'MenuFontDisabled', 'top menu, font, disabled state', true);
-  SetColor(TAppThemeColor.MenuBg, clNone, 'MenuBg', 'top menu, BG', true);
-  SetColor(TAppThemeColor.MenuSelBg, clNone, 'MenuSelBg', 'top menu, BG, selected', true);
-  SetColor(TAppThemeColor.StatusFont, clNone, 'StatusFont', 'statusbar, font', true);
-  SetColor(TAppThemeColor.StatusBg, clNone, 'StatusBg', 'statusbar, BG', true);
+  SetColor(TAppThemeColor.MenuFont, clNone, 'MenuFont', 'top menu, font');
+  SetColor(TAppThemeColor.MenuFontHotkey, clNone, 'MenuFontHotkey', 'top menu, font, hotkey');
+  SetColor(TAppThemeColor.MenuFontDisabled, clNone, 'MenuFontDisabled', 'top menu, font, disabled state');
+  SetColor(TAppThemeColor.MenuBg, clNone, 'MenuBg', 'top menu, BG');
+  SetColor(TAppThemeColor.MenuSelBg, clNone, 'MenuSelBg', 'top menu, BG, selected');
+  SetColor(TAppThemeColor.StatusFont, clNone, 'StatusFont', 'statusbar, font');
+  SetColor(TAppThemeColor.StatusBg, clNone, 'StatusBg', 'statusbar, BG');
   SetColor(TAppThemeColor.ScrollBack, $d0d0d0, 'ScrollBack', 'scrollbar, BG');
   SetColor(TAppThemeColor.ScrollRect, nColorBorder, 'ScrollRect', 'scrollbar, thumb border');
   SetColor(TAppThemeColor.ScrollFill, nColorBack, 'ScrollFill', 'scrollbar, thumb fill');
