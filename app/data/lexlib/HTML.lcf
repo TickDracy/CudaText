@@ -206,6 +206,14 @@ object SyntAnal8: TLibSyntAnalyzer
       ColumnTo = 0
     end
     item
+      DisplayName = 'Tag name'
+      StyleName = 'Tag id incorrect'
+      TokenType = 13
+      Expression = '(?<=</?)[a-z_][\w\-]*'
+      ColumnFrom = 0
+      ColumnTo = 0
+    end
+    item
       DisplayName = 'Number'
       StyleName = 'Number'
       BlockName = 'Tag begin'
@@ -224,11 +232,11 @@ object SyntAnal8: TLibSyntAnalyzer
       ColumnTo = 0
     end
     item
-      DisplayName = 'Tag param'
+      DisplayName = 'Tag str quoted'
       StyleName = 'Tag string'
       BlockName = 'Tag begin'
-      TokenType = 4
-      Expression = '(?s) (?<=[\=\{\[:,]\x20*) ("|'#39') (<\?.+?\?>|.)*? (\1|\Z)'
+      TokenType = 15
+      Expression = '(?s)("|'#39')(<\?.+?\?>|.)*?(\1|\Z)'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -242,24 +250,20 @@ object SyntAnal8: TLibSyntAnalyzer
       ColumnTo = 0
     end
     item
-      DisplayName = 'Tag id known'
+      DisplayName = 'Tag prop'
       StyleName = 'Tag prop'
       BlockName = 'Tag begin'
-      TokenType = 2
-      Expression = 
-        '\b(allowfullscreen|allowpaymentrequest|async|autofocus|autoplay|' +
-        'checked|controls|default|defer|disabled|formnovalidate|hidden|is' +
-        'map|itemscope|loop|multiple|muted|nomodule|novalidate|open|plays' +
-        'inline|readonly|required|reversed|selected|truespeed)\b'
+      TokenType = 14
+      Expression = '[a-z_][\w\-]*(?==)'
       ColumnFrom = 0
       ColumnTo = 0
     end
     item
-      DisplayName = 'Tag param val'
-      StyleName = 'Tag unknown text'
+      DisplayName = 'Tag prop val'
+      StyleName = 'Tag string'
       BlockName = 'Tag begin'
-      TokenType = 2
-      Expression = '(?r)[\w\-\.\#/][\w\-:;\./\+\?%\(\)]*'
+      TokenType = 15
+      Expression = '(?<==)[^\s='#39'"<>]+'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -296,24 +300,7 @@ object SyntAnal8: TLibSyntAnalyzer
     end>
   BlockRules = <
     item
-      DisplayName = 'Tag id incorrect'
-      StyleName = 'Tag id incorrect'
-      BlockType = btTagDetect
-      ConditionList = <
-        item
-          TokenTypes = 4
-        end
-        item
-          TagList.Strings = (
-            '<'
-            '</')
-          TokenTypes = 1024
-        end>
-      HighlightPos = cpAny
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'Tag id'
+      DisplayName = 'Tag name'
       StyleName = 'Tag id correct'
       BlockType = btTagDetect
       ConditionList = <
@@ -463,47 +450,8 @@ object SyntAnal8: TLibSyntAnalyzer
             'video'
             'wbr'
             'xmp')
-          TokenTypes = 4
+          TokenTypes = 8192
           IgnoreCase = True
-        end
-        item
-          TagList.Strings = (
-            '<'
-            '</')
-          TokenTypes = 1024
-        end>
-      HighlightPos = cpBound
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'Tag property'
-      StyleName = 'Tag prop'
-      BlockType = btTagDetect
-      ConditionList = <
-        item
-          TagList.Strings = (
-            '=')
-          TokenTypes = 8
-        end
-        item
-          TokenTypes = 4
-        end>
-      IdentIndex = 1
-      HighlightPos = cpBound
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'Tag property value'
-      StyleName = 'Tag string'
-      BlockType = btTagDetect
-      ConditionList = <
-        item
-          TokenTypes = 20
-        end
-        item
-          TagList.Strings = (
-            '=')
-          TokenTypes = 8
         end>
       HighlightPos = cpBound
       IgnoreAsParent = False
@@ -534,7 +482,7 @@ object SyntAnal8: TLibSyntAnalyzer
       IgnoreAsParent = False
     end
     item
-      DisplayName = 'Void tag'
+      DisplayName = 'Tag void begin'
       ConditionList = <
         item
           TagList.Strings = (
@@ -554,15 +502,10 @@ object SyntAnal8: TLibSyntAnalyzer
             'source'
             'track'
             'wbr')
-          TokenTypes = 4
+          TokenTypes = 8192
           IgnoreCase = True
-        end
-        item
-          TagList.Strings = (
-            '<')
-          TokenTypes = 1024
         end>
-      BlockEnd = 'Void tag end'
+      BlockEnd = 'Tag void end'
       NotCollapsed = True
       NameFmt = '%s-1~[>]1'
       RefToCondEnd = True
@@ -572,7 +515,7 @@ object SyntAnal8: TLibSyntAnalyzer
       IgnoreAsParent = False
     end
     item
-      DisplayName = 'Void tag end'
+      DisplayName = 'Tag void end'
       BlockType = btRangeEnd
       ConditionList = <
         item
@@ -586,7 +529,7 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag id hilite BG'
       ConditionList = <
         item
-          TokenTypes = 4
+          TokenTypes = 8192
           IgnoreCase = True
         end
         item
@@ -608,7 +551,7 @@ object SyntAnal8: TLibSyntAnalyzer
       BlockType = btRangeEnd
       ConditionList = <
         item
-          TokenTypes = 4
+          TokenTypes = 8192
           IgnoreCase = True
         end
         item
@@ -618,28 +561,6 @@ object SyntAnal8: TLibSyntAnalyzer
         end>
       SameIdent = True
       HighlightPos = cpBound
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'Tag attribute'
-      BlockName = 'Tag begin'
-      ConditionList = <
-        item
-          TokenTypes = 20
-        end
-        item
-          TagList.Strings = (
-            '=')
-          TokenTypes = 8
-        end
-        item
-          TokenTypes = 4
-        end>
-      NotCollapsed = True
-      DisplayInTree = False
-      NameFmt = '%s0 %s-1 %s-2'
-      HighlightPos = cpBound
-      NoEndRule = True
       IgnoreAsParent = False
     end
     item
@@ -894,7 +815,7 @@ object SyntAnal8: TLibSyntAnalyzer
   TokenTypeNames.Strings = (
     'Unknown'
     'Comment'
-    'Identifier'
+    'Id'
     'Symbol'
     'String'
     'Number'
@@ -902,9 +823,12 @@ object SyntAnal8: TLibSyntAnalyzer
     'Color'
     'String2'
     'Text'
-    'Open Tag'
-    'Close Tag'
-    'Include Tag')
+    'Tag bracket <'
+    'Tag bracket >'
+    'Include <? ?>'
+    'Tag name'
+    'Tag prop'
+    'Tag prop val')
   Extentions = 
     'html htm htt hta htx htc htd shtml phtml xhtml asp aspx ascx asm' +
     'x jsp hhc dtd'
