@@ -259,7 +259,7 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag unknown text'
       BlockName = 'Tag begin'
       TokenType = 2
-      Expression = '[\w\-\.][\w\-:\./]*'
+      Expression = '(?r)[\w\-\.\#/][\w\-:\./\+\?]*'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -801,48 +801,6 @@ object SyntAnal8: TLibSyntAnalyzer
         end>
       HighlightPos = cpAny
       IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'SVG begin'
-      StyleName = 'SVG BG'
-      ConditionList = <
-        item
-          TagList.Strings = (
-            'svg')
-          TokenTypes = 4
-          IgnoreCase = True
-        end
-        item
-          TagList.Strings = (
-            '<')
-          TokenTypes = 1024
-        end>
-      BlockEnd = 'SVG end'
-      RefToCondEnd = True
-      DynHighlight = dhRange
-      HighlightPos = cpAny
-      IgnoreAsParent = False
-    end
-    item
-      DisplayName = 'SVG end'
-      BlockType = btRangeEnd
-      ConditionList = <
-        item
-          TokenTypes = 2048
-        end
-        item
-          TagList.Strings = (
-            'svg')
-          TokenTypes = 4
-          IgnoreCase = True
-        end
-        item
-          TagList.Strings = (
-            '</')
-          TokenTypes = 1024
-        end>
-      HighlightPos = cpAny
-      IgnoreAsParent = False
     end>
   CodeTemplates = <>
   SubAnalyzers = <
@@ -894,6 +852,14 @@ object SyntAnal8: TLibSyntAnalyzer
       StartExpression = '(?<=\bstyle\x20*=\x20*)"'
       EndExpression = '"'
       SyntAnalyzer = SyntAnal7
+    end
+    item
+      DisplayName = 'SVG'
+      StyleName = 'SVG BG'
+      StartExpression = '<svg\b'
+      EndExpression = '</svg>'
+      SyntAnalyzer = SyntAnal17
+      IncludeBounds = True
     end>
   SampleText.Strings = (
     '<!doctype test="123">'
