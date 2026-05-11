@@ -182,14 +182,6 @@ object SyntAnal8: TLibSyntAnalyzer
       ColumnTo = 0
     end
     item
-      DisplayName = 'Include tag'
-      StyleName = 'Include tag'
-      TokenType = 12
-      Expression = '<\?php\b | <\? | \?> | <% | %>'
-      ColumnFrom = 0
-      ColumnTo = 0
-    end
-    item
       DisplayName = '<'
       StyleName = 'Tag bound'
       TokenType = 10
@@ -210,6 +202,14 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag id incorrect'
       TokenType = 13
       Expression = '(?<=</?)[a-z_][\w\-]*'
+      ColumnFrom = 0
+      ColumnTo = 0
+    end
+    item
+      DisplayName = 'Include tag'
+      StyleName = 'Include tag'
+      TokenType = 12
+      Expression = '<\?php\b|<\?|\?>|<%|%>'
       ColumnFrom = 0
       ColumnTo = 0
     end
