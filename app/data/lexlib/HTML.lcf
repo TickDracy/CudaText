@@ -192,7 +192,7 @@ object SyntAnal8: TLibSyntAnalyzer
     item
       DisplayName = 'Tag name'
       StyleName = 'Tag id incorrect'
-      TokenType = 13
+      TokenType = 6
       Expression = '(?<=</?)[a-z_][\w\-]*'
       ColumnFrom = 0
       ColumnTo = 0
@@ -227,8 +227,8 @@ object SyntAnal8: TLibSyntAnalyzer
       DisplayName = 'Tag str quoted'
       StyleName = 'Tag string'
       BlockName = 'Tag begin'
-      TokenType = 15
-      Expression = '(?s)("|'#39')(<\?.+?\?>|.)*?(\1|\Z)'
+      TokenType = 4
+      Expression = '(?s)(?<==\x20*)("|'#39')(<\?.+?\?>|.)*?(\1|\Z)'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -236,7 +236,7 @@ object SyntAnal8: TLibSyntAnalyzer
       DisplayName = 'Tag prop'
       StyleName = 'Tag prop'
       BlockName = 'Tag begin'
-      TokenType = 14
+      TokenType = 7
       Expression = '[a-z_][\w\-]*(?=\x20*=)'
       ColumnFrom = 0
       ColumnTo = 0
@@ -245,7 +245,7 @@ object SyntAnal8: TLibSyntAnalyzer
       DisplayName = 'Tag prop val'
       StyleName = 'Tag string'
       BlockName = 'Tag begin'
-      TokenType = 15
+      TokenType = 8
       Expression = '(?<==\x20*)[^\s='#39'"<>]+'
       ColumnFrom = 0
       ColumnTo = 0
@@ -434,7 +434,7 @@ object SyntAnal8: TLibSyntAnalyzer
             'video'
             'wbr'
             'xmp')
-          TokenTypes = 8192
+          TokenTypes = 64
           IgnoreCase = True
         end>
       HighlightPos = cpBound
@@ -486,7 +486,7 @@ object SyntAnal8: TLibSyntAnalyzer
             'source'
             'track'
             'wbr')
-          TokenTypes = 8192
+          TokenTypes = 64
           IgnoreCase = True
         end>
       BlockEnd = 'Tag void end'
@@ -513,7 +513,7 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag id hilite BG'
       ConditionList = <
         item
-          TokenTypes = 8192
+          TokenTypes = 64
           IgnoreCase = True
         end
         item
@@ -535,7 +535,7 @@ object SyntAnal8: TLibSyntAnalyzer
       BlockType = btRangeEnd
       ConditionList = <
         item
-          TokenTypes = 8192
+          TokenTypes = 64
           IgnoreCase = True
         end
         item
@@ -701,7 +701,7 @@ object SyntAnal8: TLibSyntAnalyzer
             'WhiteSmoke'
             'Yellow'
             'YellowGreen')
-          TokenTypes = 32768
+          TokenTypes = 256
           IgnoreCase = True
         end>
       HighlightPos = cpAny
@@ -769,12 +769,10 @@ object SyntAnal8: TLibSyntAnalyzer
   SampleText.Strings = (
     '<!doctype test="123">'
     '<!-- comment -->'
-    '<meta2>text</meta3>'
-    '<? php ?> or <% asp text  %> '
-    ''
+    '<?php ?> text <% asp %> <unknown> &nbsp;'
     '<html> '
     '  <head>'
-    '    <title test="15" #$@ >Text 123</title>'
+    '    <title test=20 #$@ >Text 123</title>'
     '  </head>'
     ''
     '  <script type="text/javascript">'
@@ -787,13 +785,13 @@ object SyntAnal8: TLibSyntAnalyzer
     '  </script> '
     '  <style>'
     '  p {'
-    '  color: #ff0 }'
+    '    color: #ff0 }'
     '  </style>'
     '  '
     '  <svg> <filter type="table"> </svg>'
     '      '
-    '  <body src="www.com" style='#39'aaa; aaa; aaa;'#39'> '
-    '    <h1 color=#FA0 color=yellow prop=200 >Text &nbsp;</h1> '
+    '  <body src=/dir/name style="p { color: #AB0; }" > '
+    '    <h1 color=#FA0 color=yellow prop=200 >Text</h1> '
     '  </body> '
     '</html>')
   TokenTypeNames.Strings = (
@@ -803,16 +801,13 @@ object SyntAnal8: TLibSyntAnalyzer
     'Symbol'
     'String'
     'Number'
-    '---'
-    '---'
-    '---'
+    'Tag name'
+    'Tag prop'
+    'Tag prop val'
     'Text'
     'Tag bracket <'
     'Tag bracket >'
-    'Include tag'
-    'Tag name'
-    'Tag prop'
-    'Tag prop val')
+    'Include tag')
   Extentions = 
     'html htm htt hta htx htc htd shtml phtml xhtml asp aspx ascx asm' +
     'x jsp hhc dtd'
