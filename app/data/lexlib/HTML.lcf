@@ -174,14 +174,6 @@ object SyntAnal8: TLibSyntAnalyzer
       ColumnTo = 0
     end
     item
-      DisplayName = 'Comment doc'
-      StyleName = 'Comment doc'
-      TokenType = 1
-      Expression = '(?s)<! .*? >'
-      ColumnFrom = 0
-      ColumnTo = 0
-    end
-    item
       DisplayName = '<'
       StyleName = 'Tag bound'
       TokenType = 10
@@ -226,8 +218,8 @@ object SyntAnal8: TLibSyntAnalyzer
       DisplayName = 'Color'
       StyleName = 'Color'
       BlockName = 'Tag begin'
-      TokenType = 7
-      Expression = '\#([0-9a-f]{3}|[0-9a-f]{6})\b'
+      TokenType = 2
+      Expression = '\#(\h{3}|\h{6})\b'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -237,15 +229,6 @@ object SyntAnal8: TLibSyntAnalyzer
       BlockName = 'Tag begin'
       TokenType = 15
       Expression = '(?s)("|'#39')(<\?.+?\?>|.)*?(\1|\Z)'
-      ColumnFrom = 0
-      ColumnTo = 0
-    end
-    item
-      DisplayName = 'Tag ='
-      StyleName = 'Tag bound'
-      BlockName = 'Tag begin'
-      TokenType = 3
-      Expression = '='
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -286,7 +269,8 @@ object SyntAnal8: TLibSyntAnalyzer
     item
       DisplayName = 'Other symbols'
       StyleName = 'Tag bound'
-      Expression = '[:\{\}"\[\]]'
+      TokenType = 3
+      Expression = '[=:\{\}"\[\]]'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -809,23 +793,23 @@ object SyntAnal8: TLibSyntAnalyzer
     '  <svg> <filter type="table"> </svg>'
     '      '
     '  <body src="www.com" style='#39'aaa; aaa; aaa;'#39'> '
-    '    <h1 color=#dde color=yellow color=violet >Text &nbsp;</h1> '
+    '    <h1 color=#FA0 color=yellow prop=200 >Text &nbsp;</h1> '
     '  </body> '
     '</html>')
   TokenTypeNames.Strings = (
     'Unknown'
     'Comment'
-    'Id'
+    'Color'
     'Symbol'
     'String'
     'Number'
-    'Number2'
-    'Color'
-    'String2'
+    '---'
+    '---'
+    '---'
     'Text'
     'Tag bracket <'
     'Tag bracket >'
-    'Include <? ?>'
+    'Include tag'
     'Tag name'
     'Tag prop'
     'Tag prop val')
