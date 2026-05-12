@@ -254,7 +254,7 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag prop'
       BlockName = 'Tag begin'
       TokenType = 14
-      Expression = '[a-z_][\w\-]*(?==)'
+      Expression = '[a-z_][\w\-]*(?=\x20*=)'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -263,7 +263,7 @@ object SyntAnal8: TLibSyntAnalyzer
       StyleName = 'Tag string'
       BlockName = 'Tag begin'
       TokenType = 15
-      Expression = '(?<==)[^\s='#39'"<>]+'
+      Expression = '(?<==\x20*)[^\s='#39'"<>]+'
       ColumnFrom = 0
       ColumnTo = 0
     end
@@ -717,7 +717,7 @@ object SyntAnal8: TLibSyntAnalyzer
             'WhiteSmoke'
             'Yellow'
             'YellowGreen')
-          TokenTypes = 4
+          TokenTypes = 32768
           IgnoreCase = True
         end>
       HighlightPos = cpAny
