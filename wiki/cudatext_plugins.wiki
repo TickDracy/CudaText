@@ -439,9 +439,10 @@ Special macros are handled by Snippets plugin in snippet text:
 * ${cmt_end} - Current lexer's "block comment" end symbols (or empty string)
 * ${cmt_line} - Current lexer's "line comment" symbols (or empty string)
 
-* ${fname} - File name only, without path
 * ${fpath} - Full file name, with path
-* ${fdir} - Directory of file
+* ${fdir} - Directory of the file
+* ${fname} - File name only, without path
+* ${fname_base} - File name only, without path and without extension
 * ${fext} - Extension of file
 * ${psep} - OS path separator: backslash on Windows, slash on Unix
 
