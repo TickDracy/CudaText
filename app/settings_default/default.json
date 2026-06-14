@@ -1,5 +1,5 @@
-//Config default.json is for copying parts to user.json,
-//it's not read as actual config. Config user.json is read.
+//File "default.json" is for copying parts to "user.json",
+//it's not read as actual config. Config "user.json" is read.
 //
 //Some options have suffix for OS:
 //  Windows: empty
@@ -153,10 +153,13 @@
   "gap_bitmap_align": -1,
 
   //[UI]
-  //Double-buffering of UI controls. [has suffix]
-  //  Use only if problems with rendering.
-  //  If app shows flickering, change to true.
-  //  If high-DPI monitor (e.g. Retina) shows blurred text, change to false.
+  //Double-buffering of the editor control and other GUI controls. [has suffix]
+  //Use it if you see problems with rendering:
+  //a) If the app shows flickering, change to true.
+  //b) If a high-DPI monitor shows blurred text, change to false.
+  //Also, it makes sense to turn this option off on Windows/Linux to reduce memory
+  //usage by the bitmap buffer (the bitmap buffer takes about 10 MB per UI tab at
+  //large window sizes like 2500x2000).
   "ui_buffered": true,
   "ui_buffered__linux": true,
   "ui_buffered__mac": false,
@@ -310,6 +313,8 @@
   //1) Lexer parsing runs 1.5-3 times faster.
   //2) Code-tree is disabled.
   //3) Code-tree helpers (written in Python and Pascal) are disabled.
+  //So, this option, if set to absurd value 0, effectively disables the folding,
+  //speeds up the lexer parsing, and reduces memory usage.
   //Note: this option is global, not per-lexer.
   "lexer_folding_max_lines": 15000,
 
