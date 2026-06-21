@@ -998,40 +998,43 @@ end;
 
 procedure TfmMain.DoOps_LoadHistory_GroupView(cfg: TAppJsonConfig; const AJsonPath: string);
 var
-  Sep: TATStringSeparator;
+  Sep, Sep2: TATStringSeparator;
+  SItem: string;
   i: integer;
 begin
   FOption_GroupMode:= TATGroupsMode(cfg.GetValue(AJsonPath+'/groups', Ord(gmOne)));
 
-  Sep.Init(cfg.GetValue(AJsonPath+'/gr/panel', ''));
-  Sep.GetItemInt(FOption_GroupPanelSize.x, 50);
-  Sep.GetItemInt(FOption_GroupPanelSize.y, 50);
+  Sep.Init(cfg.GetValue(AJsonPath+'/grp/panel', ''));
+  Sep.GetItemInt(FOption_GroupPanelSize.x, 50*100);
+  Sep.GetItemInt(FOption_GroupPanelSize.y, 50*100);
 
-  Sep.Init(cfg.GetValue(AJsonPath+'/gr/pages', ''));
+  Sep.Init(cfg.GetValue(AJsonPath+'/grp/pages', ''), ';');
   for i in TATGroupsNums do
   begin
-    Sep.GetItemInt(FOption_GroupSizes[i].x, 50);
-    Sep.GetItemInt(FOption_GroupSizes[i].y, 50);
+    Sep.GetItemStr(SItem);
+    Sep2.Init(SItem, ',');
+    Sep2.GetItemInt(FOption_GroupSizes[i].x, 50*100);
+    Sep2.GetItemInt(FOption_GroupSizes[i].y, 50*100);
   end;
 end;
 
 procedure TfmMain.DoOps_SaveHistory_GroupView(cfg: TAppJsonConfig; const AJsonPath: string);
 var
   SizePanel: TPoint;
-  SizePage: TATGroupsPoints;
+  SizePage: TAppGroupsPoints;
   S: string;
   i: integer;
 begin
   cfg.SetValue(AJsonPath+'/groups', Ord(GroupsMain.Mode));
 
-  GroupsMain.GetSizes(SizePanel, SizePage);
+  AppGroups_GetSizes(GroupsMain, SizePanel, SizePage);
 
   S:= '';
   for i in TATGroupsNums do
-    S+= Format('%d,%d,', [SizePage[i].x, SizePage[i].y]);
+    S+= Format('%d,%d;', [SizePage[i].x, SizePage[i].y]);
 
-  cfg.SetValue(AJsonPath+'/gr/panel', Format('%d,%d', [SizePanel.x, SizePanel.y]));
-  cfg.SetValue(AJsonPath+'/gr/pages', S);
+  cfg.SetValue(AJsonPath+'/grp/panel', Format('%d,%d', [SizePanel.x, SizePanel.y]));
+  cfg.SetValue(AJsonPath+'/grp/pages', S);
 end;
 
 
@@ -1248,7 +1251,7 @@ procedure TfmMain.DoApplyInitialGroupSizes;
 //groups sizes must be restored in OnShow, OnCreate is too early
 begin
   UpdateGroupsMode(FOption_GroupMode);
-  GroupsMain.SetSizes(FOption_GroupPanelSize, FOption_GroupSizes);
+  AppGroups_SetSizes(GroupsMain, FOption_GroupPanelSize, FOption_GroupSizes);
   GroupsMain.SaveSplitPos; //apply current sizes to internal Groups vars
 end;
 
