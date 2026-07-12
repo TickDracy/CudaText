@@ -227,7 +227,8 @@ begin
   then
   begin
     fnBase:= AppFile_Session;
-    DoOps_SaveSessionsBackups(fnBase);
+    if IsAnyFrameTextModified then
+      DoOps_SaveSessionsBackups(fnBase);
     DoOps_SaveSession(fnBase, ASaveModifiedTabs, ASaveModifiedTabs, false);
   end;
 end;
@@ -239,12 +240,31 @@ begin
   AppMakeBackupFiles(ASessionFilename, '.cuda-session', UiOps.BackupLastSessions);
 end;
 
+function TfmMain.IsAnyFrameTextModified: boolean;
+var
+  nFrameCount, iFrame: integer;
+  TempFrameState: TFrameEditState;
+begin
+  nFrameCount:= FrameCount_ForSession;
+
+  if nFrameCount<>Length(FPrevFramesEditState) then
+    exit(true);
+
+  for iFrame:= 0 to nFrameCount-1 do
+  begin
+    TempFrameState.Assign(Frames[iFrame]);
+    if TempFrameState<>FPrevFramesEditState[iFrame] then
+      exit(true);
+  end;
+
+  Result:= false;
+end;
+
+
 function TfmMain.DoOps_SaveSession(const ASessionId: string;
   ASaveModifiedFiles, ASaveUntitledTabs, AByTimer: boolean): boolean;
-const
-  keysToIgnore: array of UTF8String = ('text', 'undo', 'redo');
 var
-  cfg, cfg_bookmarks: TAppJsonConfigEx;
+  cfg, cfg_bookmarks: TAppJsonConfig;
   Frame: TEditorFrame;
   Gr: TATGroups;
   Pages: TATPages;
@@ -272,7 +292,7 @@ begin
   nCountFiles:= 0;
   nCountUntitled:= 0;
   nSavedTabIndex:= 0;
-  nFrameCount:= FrameCount;
+  nFrameCount:= FrameCount_ForSession;
   nPrevFrameCount:= 0;
 
   {
@@ -284,12 +304,8 @@ begin
   end;
   }
 
-  //delete outdated info about single untitled tab, issue #5712
-  if (nFrameCount=1) and Frames[0].IsEmpty then
-    nFrameCount:= 0;
-
-  cfg:= TAppJsonConfigEx.Create(nil);
-  cfg_bookmarks:= TAppJsonConfigEx.Create(nil);
+  cfg:= TAppJsonConfig.Create(nil);
+  cfg_bookmarks:= TAppJsonConfig.Create(nil);
   try
     try
       cfg.Filename:= sSessionFileName;
@@ -312,9 +328,6 @@ begin
         FreeAndNil(cfg_bookmarks);
       end;
     end;
-
-    if FPrevJsonObj=nil then
-      FPrevJsonObj:= CloneJsonObj(cfg.GetJsonObj, keysToIgnore);
 
     DoOps_SaveHistory_GroupView(cfg, sRootPath);
 
@@ -497,24 +510,19 @@ begin
     Result:= true;
   finally
     try
-      if not bSessionUpdated then
-      begin
-        if not IsJsonObjEqual(cfg.GetJsonObj, FPrevJsonObj, keysToIgnore) then
-          bSessionUpdated:= true; //the JSON config has been updated
-      end;
+      if not bFileExisted then
+        bSessionUpdated:= true;
 
       if bSessionUpdated then
       begin
-        FPrevJsonObj.Free;
-        FPrevJsonObj:= CloneJsonObj(cfg.GetJsonObj, keysToIgnore);
         if not FileAge(sSessionFileName, fileWriteTimeBeforeSaving) then
           fileWriteTimeBeforeSaving:= Default(TDateTime);
       end
       else
-        cfg.SetModified(false); //no need to save the session
-
-      if not bFileExisted then
-        cfg.SetModified(true);
+      begin
+        //no Frames[i] texts were changed: set cfg.Modified=False to supress JSON saving
+        cfg.ClearModifiedFlag;
+      end;
 
       FreeAndNil(cfg_bookmarks);
       FreeAndNil(cfg); //saves json file when its property Modified is True
@@ -527,11 +535,6 @@ begin
   begin
     if not FileAge(sSessionFileName, fileWriteTimeAfterSaving) then
       fileWriteTimeAfterSaving:= Default(TDateTime);
-    if fileWriteTimeBeforeSaving=fileWriteTimeAfterSaving then
-    begin
-      FPrevJsonObj.Free;
-      FPrevJsonObj:= TJSONNull.Create;
-    end;
   end;
 
   if UiOps.LogSessions and (bSessionUpdated or not bFileExisted) then
@@ -988,12 +991,9 @@ begin
       Ed.DoEventCarets();
   end;
 
-  SetLength(FPrevFramesEditState, FrameCount);
+  SetLength(FPrevFramesEditState, FrameCount_ForSession);
   for iFrame:= 0 to Length(FPrevFramesEditState)-1 do
-  begin
-    Frame:= Frames[iFrame];
-    FPrevFramesEditState[iFrame].Assign(Frame);
-  end;
+    FPrevFramesEditState[iFrame].Assign(Frames[iFrame]);
 end;
 
 procedure TfmMain.DoOps_LoadHistory_GroupView(cfg: TAppJsonConfig; const AJsonPath: string);

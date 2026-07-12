@@ -42,7 +42,6 @@ uses
   fix_focus_window,
   appjsonconfig,
   at__fpjson,
-  proc_json_ex,
   PythonEngine,
   ec_LexerList,
   ec_SyntAnal,
@@ -754,7 +753,6 @@ type
     FOption_SidebarTab: string;
     FOption_BottomTab: string;
     FCmdlineFileCount: integer;
-    FPrevJsonObj: TJSONData;
     FPrevFramesEditState: array of TFrameEditState;
     //FPrevFindDlgVisible: boolean;
     FStartupShowFloating1: boolean;
@@ -782,6 +780,7 @@ type
     function HandleRenameCheckAllowed(const AFileName: string): boolean;
     procedure HandleTimerCommand(Ed: TATSynEdit; CmdCode: integer; CmdInvoke: TATCommandInvoke);
     procedure InvalidateMouseoverDependantControls;
+    function IsAnyFrameTextModified: boolean;
     function IsTooManyTabsOpened: boolean;
     function GetUntitledNumberedCaption: string;
     procedure DlgProc_MainForm_OnParseDone(Sender: TObject; ATime: integer);
@@ -1238,6 +1237,7 @@ type
     TimerFinderWrapped: TTimer;
     TimerShowFloating: TTimer;
     function FrameCount: integer;
+    function FrameCount_ForSession: integer;
     property Frames[N: integer]: TEditorFrame read GetFrame;
     function CurrentGroups: TATGroups;
     function CurrentFrame: TEditorFrame;
@@ -2679,9 +2679,12 @@ begin
     if NTick-FLastSaveSessionTick>=Abs(UiOps.SessionSaveInterval)*1000 then
     begin
       FLastSaveSessionTick:= NTick;
-      DoOps_SaveSessionsBackups(AppFile_Session); //users need session-backups be made by SessionSaveInterval<>0, issue #5906
-      DoOps_SaveSession(AppFile_Session, true{ASaveModifiedTabs}, true{ASaveUntitledTabs}, true{AByTimer});
-      DoOps_SaveHistory(AppFile_History, false, false);
+      if IsAnyFrameTextModified then
+      begin
+        DoOps_SaveSessionsBackups(AppFile_Session); //users need session-backups be made by SessionSaveInterval<>0, issue #5906
+        DoOps_SaveSession(AppFile_Session, true{ASaveModifiedTabs}, true{ASaveUntitledTabs}, true{AByTimer});
+      end;
+      //DoOps_SaveHistory(AppFile_History, false, false); //why to save history by timer?
     end;
   end;
 
@@ -3559,8 +3562,6 @@ begin
   CloseFormAutoCompletion;
 
   AppStopListTimers;
-
-  FreeAndNil(FPrevJsonObj);
 
   if Assigned(FFinder) then
     FreeAndNil(FFinder);
