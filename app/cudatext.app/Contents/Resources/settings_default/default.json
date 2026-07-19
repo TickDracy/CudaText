@@ -1411,8 +1411,14 @@
   "ui_statusbar_hint_lines": 35,
 
   //[UI]
-  //Show full file path in the window title.
-  "ui_title_path": false,
+  //What details to show in the window title.
+  //Value is string containing some option-chars.
+  //  if "p" in value: Show full file path instead of only filename
+  //  if "s" in value: Hide {session_name} part always
+  //  if "d" in value: Hide {default} part, ie only for default session
+  //  if "f" in value: Hide [f1] floating-group indicator
+  //  if "n" in value: Hide " - CudaText"
+  "ui_title": "d",
 
   //Pause of hint, of command "show function-hint".
   "ui_alt_hint_time": 9,
@@ -1537,6 +1543,11 @@
   //Python API delay for event "on_change_slow", in milliseconds.
   //For example, it's used in CudaLint plugin.
   "py_change_slow": 1500,
+
+  //Python API event "on_change_slow": the maximal interval for the firing of the event,
+  //in seconds. Ie even if user constantly writes text without pauses, "on_change_slow"
+  //will fire after this inverval.
+  "py_change_slow_limit": 30,
 
   //[Text/Commands]
   //Commenting: If no selection then move caret to next line.

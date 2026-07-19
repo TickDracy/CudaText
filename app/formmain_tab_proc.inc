@@ -44,7 +44,7 @@ begin
   F.NotifEnabled:= false;
 end;
 
-function TfmMain.CreateTab(APages: TATPages; const ACaption: string;
+function TfmMain.CreateTab(APages: TATPages; const AFileName, ATabCaption: string;
   AndActivate: boolean; AAllowNearCurrent: TAppNewTabNearCurrent): TATTabData;
 var
   F: TEditorFrame;
@@ -58,9 +58,10 @@ begin
   F:= TEditorFrame.Create(Self, GroupsMain.Mode=gmOne);
   F.Name:= '';
   F.Visible:= false;
-  F.TabCaption:= ACaption;
+  F.FileName:= AFileName;
+  F.TabCaption:= ATabCaption;
 
-  if ACaption='' then
+  if ATabCaption='' then
   begin
     F.TabCaptionUntitled:= GetUntitledNumberedCaption;
     F.TabCaption:= F.TabCaptionUntitled;
@@ -111,6 +112,7 @@ procedure TfmMain.DoOnTabAdd(Sender: TObject);
 var
   Pages: TATPages;
   Data: TATTabData;
+  Frame: TEditorFrame;
 begin
   CloseFormAutoCompletion;
   DoTooltipHide;
@@ -118,10 +120,29 @@ begin
   if IsTooManyTabsOpened then exit;
 
   Pages:= (Sender as TATTabs).Parent as TATPages;
-  Data:= CreateTab(Pages, '');
+  Data:= CreateTab(Pages, '', '');
 
   if Assigned(Data) then
-    DoApplyNewdocLexer(Data.TabObject as TEditorFrame);
+  begin
+    Frame:= Data.TabObject as TEditorFrame;
+    Assert(Assigned(Frame), 'Frame=nil in DoOnTabAdd');
+    DoApplyNewdocLexer(Frame);
+  end;
+end;
+
+procedure TfmMain.DoOnTabAdded(Sender: TObject; ATabIndex: integer);
+var
+  Data: TATTabData;
+  Frame: TEditorFrame;
+begin
+  Data:= (Sender as TATTabs).GetTabData(ATabIndex);
+
+  if Assigned(Data) then
+  begin
+    Frame:= Data.TabObject as TEditorFrame;
+    Assert(Assigned(Frame), 'Frame=nil in DoOnTabAdded');
+    DoPyEvent(Frame.Ed1, TAppPyEvent.OnTabAdd, []);
+  end;
 end;
 
 procedure TfmMain.DoOnTabFocus(Sender: TObject);

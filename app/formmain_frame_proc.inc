@@ -257,11 +257,18 @@ begin
 end;
 
 function TfmMain.FrameCount_ForSession: integer;
+var
+  Frame: TEditorFrame;
+  iFrame: integer;
 begin
-  Result:= FrameCount;
-  //delete outdated info about single untitled tab, issue #5712
-  if (Result=1) and Frames[0].IsEmpty then
-    Result:= 0;
+  Result:= 0;
+  for iFrame:= 0 to FrameCount-1 do
+  begin
+    Frame:= Frames[iFrame];
+    if Frame.IsEmpty then Continue;
+    if Frame.IsWelcome then Continue;
+    Inc(Result);
+  end;
 end;
 
 function TfmMain.CurrentGroups: TATGroups;
@@ -291,20 +298,7 @@ end;
 
 function TfmMain.CurrentFrame: TEditorFrame;
 begin
-  Result:= CurrentFrameEx(CurrentGroups);
-end;
-
-function TfmMain.CurrentFrameEx(AGroups: TATGroups): TEditorFrame;
-var
-  Pages: TATPages;
-  D: TATTabData;
-begin
-  Pages:= AGroups.PagesCurrent;
-  D:= Pages.Tabs.GetTabData(Pages.Tabs.TabIndex);
-  if Assigned(D) and Assigned(D.TabObject) and (D.TabObject is TEditorFrame) then
-    Result:= D.TabObject as TEditorFrame
-  else
-    Result:= nil;
+  Result:= TGroupsHelper.GetActiveFrameOfGroups(CurrentGroups);
 end;
 
 function TfmMain.CurrentEditor: TATSynEdit;

@@ -212,7 +212,8 @@ begin
 
     ////state
     cfg.SetValue('lang', UiOps.LangName);
-    cfg.SetValue('session'+cOptionSystemSuffix, AppSessionName_ForHistoryFile);
+    if not IsNoneSessionActive then
+      cfg.SetValue('session'+cOptionSystemSuffix, AppSessionName_ForHistoryFile);
     cfg.SetValue('last_cmd', FLastSelectedCommand);
 
     DoOps_SaveHistory_GroupView(cfg, '');
@@ -237,24 +238,30 @@ end;
 procedure TfmMain.DoOps_SaveSessionsBackups(const ASessionFilename: string);
 //keep backups of last N unnamed sessions as 'filename.N.cuda-session'
 begin
+  if IsNoneSessionActive then exit;
   AppMakeBackupFiles(ASessionFilename, '.cuda-session', UiOps.BackupLastSessions);
 end;
 
 function TfmMain.IsAnyFrameTextModified: boolean;
 var
-  nFrameCount, iFrame: integer;
+  Frame: TEditorFrame;
   TempFrameState: TFrameEditState;
+  iFrame, iFramePrev: integer;
 begin
-  nFrameCount:= FrameCount_ForSession;
-
-  if nFrameCount<>Length(FPrevFramesEditState) then
+  if FrameCount_ForSession<>Length(FPrevFramesEditState) then
     exit(true);
 
-  for iFrame:= 0 to nFrameCount-1 do
+  iFramePrev:= 0;
+  for iFrame:= 0 to FrameCount-1 do
   begin
-    TempFrameState.Assign(Frames[iFrame]);
-    if TempFrameState<>FPrevFramesEditState[iFrame] then
+    Frame:= Frames[iFrame];
+    if Frame.IsEmpty then Continue;
+    if Frame.IsWelcome then Continue;
+    TempFrameState.Assign(Frame);
+    if iFramePrev>High(FPrevFramesEditState) then Break;
+    if TempFrameState<>FPrevFramesEditState[iFramePrev] then
       exit(true);
+    Inc(iFramePrev);
   end;
 
   Result:= false;
@@ -271,8 +278,8 @@ var
   sSessionFileName, sTabFilename, sTabFilename2,
   sRootPath, sJsonPath, sTabKind, sConsole, sUndo: string;
   nLocalGroup, nGlobalGroup, nTabInGroup: integer;
-  nCountFiles, nCountUntitled, nSavedTabIndex: integer;
-  nFrameCount, nPrevFrameCount: integer;
+  nCountFiles, nCountUntitled, iSavingTabIndex: integer;
+  nNewFrameCount, nPrevFrameCount: integer;
   bModified, bUntitled: boolean;
   bSessionUpdated, bFileExisted: boolean;
   currFramesEditState: array of TFrameEditState;
@@ -285,14 +292,16 @@ begin
 
   SSplitByChar(ASessionId, '|', sSessionFileName, sRootPath);
 
+  if ExtractFileName(sSessionFileName)=cAppSessionNone then exit;
+
   bSessionUpdated:= false;
   bFileExisted:= FileExists(sSessionFileName);
   fileWriteTimeBeforeSaving:= Default(TDateTime);
   fileWriteTimeAfterSaving:= Default(TDateTime);
   nCountFiles:= 0;
   nCountUntitled:= 0;
-  nSavedTabIndex:= 0;
-  nFrameCount:= FrameCount_ForSession;
+  iSavingTabIndex:= 0;
+  nNewFrameCount:= FrameCount_ForSession;
   nPrevFrameCount:= 0;
 
   {
@@ -303,6 +312,8 @@ begin
     DeleteFile(sSessionFileName);
   end;
   }
+
+  DoPyEvent_AppState(APPSTATE_SESSION_SAVE_BEFORE);
 
   cfg:= TAppJsonConfig.Create(nil);
   cfg_bookmarks:= TAppJsonConfig.Create(nil);
@@ -353,28 +364,34 @@ begin
       if not Floating then
         cfg.SetValue(sRootPath+'/panels/bottom_size', PanelSize);
 
-    SetLength(currFramesEditState, nFrameCount);
-    nPrevFrameCount:= Length(FPrevFramesEditState);
-
-    if nFrameCount<>nPrevFrameCount then
+    currFramesEditState:= nil;
+    nPrevFrameCount:= 0;
+    if AByTimer then
     begin
-      bSessionUpdated:= true; //number of opened documents has changed
+      SetLength(currFramesEditState, nNewFrameCount);
+      nPrevFrameCount:= Length(FPrevFramesEditState);
+    end;
 
-      //cleanup session keys, left from the previous saving
-      for iFrame:= nFrameCount to nPrevFrameCount-1 do
+    //cleanup session keys from '000' to maximal number, left from the previous saving
+    if (not AByTimer) or
+      (nNewFrameCount<>nPrevFrameCount) then
+    begin
+      bSessionUpdated:= true;
+      for iFrame:= 0 to MaxInt do
       begin
         sJsonPath:= sRootPath+'/'+Format('%3.3d', [iFrame]);
+        if cfg.GetValue(sJsonPath+'/file', '??')='??' then Break; //one-char str '?' gives access violation, FPC 3.2.3, why?
         cfg.DeleteValue(sJsonPath);
       end;
     end;
 
-    nSavedTabIndex:= 0;
-    for iFrame:= 0 to nFrameCount-1 do
+    iSavingTabIndex:= 0;
+    for iFrame:= 0 to FrameCount-1 do
     begin
       Frame:= Frames[iFrame];
       if Frame.IsEmpty then Continue;
+      if Frame.IsWelcome then Continue;
       if Frame.Ed1.Strings.LoadingFromStream then Continue;
-      if Frame.TabCaption=msgWelcomeTabTitle then Continue; //avoid reopening of '(welcome)' filler text
 
       sTabFilename:= Frame.GetFileName(Frame.Ed1);
       if Frame.EditorsLinked then
@@ -394,17 +411,20 @@ begin
       else
         Inc(nCountFiles);
 
-      sJsonPath:= sRootPath+'/'+Format('%3.3d', [nSavedTabIndex]);
-      Inc(nSavedTabIndex);
+      sJsonPath:= sRootPath+'/'+Format('%3.3d', [iSavingTabIndex]);
 
       GetFrameLocation(Frame, Gr, Pages, nLocalGroup, nGlobalGroup, nTabInGroup);
       bModified:= Frame.Ed1.Modified or (bUntitled and not Frame.IsEmpty);
 
-      currFramesEditState[iFrame].Assign(Frame);
+      if AByTimer then
+        currFramesEditState[iSavingTabIndex].Assign(Frame);
 
       if not bSessionUpdated then
       begin
-        if currFramesEditState[iFrame]<>FPrevFramesEditState[iFrame] then
+        if (not AByTimer) or
+          ((iSavingTabIndex<=High(FPrevFramesEditState)) and
+           (iSavingTabIndex<=High(currFramesEditState)) and
+           (currFramesEditState[iSavingTabIndex]<>FPrevFramesEditState[iSavingTabIndex])) then
           bSessionUpdated:= true; //frame's FileName or unsaved text has been updated
       end;
 
@@ -413,8 +433,7 @@ begin
         cfg.DeleteValue(sJsonPath+'/text');
       cfg.SetValue(sJsonPath+'/file', AppCollapseHomeDirInFilename(sTabFilename));
 
-      if bModified then
-        cfg.SetValue(sJsonPath+'/tab_title', Frame.TabCaption);
+      cfg.SetValue(sJsonPath+'/tab_title', Frame.TabCaption);
       cfg.SetValue(sJsonPath+'/group', nGlobalGroup+1); //support old sessions with 1-based index
       cfg.SetDeleteValue(sJsonPath+'/pinned', Frame.TabPinned, false);
       cfg.SetDeleteValue(sJsonPath+'/goto', Frame.GotoInput, '');
@@ -503,9 +522,12 @@ begin
             if Frame.Ed2.ModifiedBookmarks then
               Frame.DoSaveBookmarks(Frame.Ed2, cfg_bookmarks);
       end;
-    end;
 
-    FPrevFramesEditState:= Copy(currFramesEditState, 0, Length(currFramesEditState));
+      Inc(iSavingTabIndex);
+    end; //for iFrame:= 0 to ...
+
+    if AByTimer then
+      FPrevFramesEditState:= Copy(currFramesEditState, 0, Length(currFramesEditState));
 
     Result:= true;
   finally
@@ -517,11 +539,6 @@ begin
       begin
         if not FileAge(sSessionFileName, fileWriteTimeBeforeSaving) then
           fileWriteTimeBeforeSaving:= Default(TDateTime);
-      end
-      else
-      begin
-        //no Frames[i] texts were changed: set cfg.Modified=False to supress JSON saving
-        cfg.ClearModifiedFlag;
       end;
 
       FreeAndNil(cfg_bookmarks);
@@ -530,6 +547,8 @@ begin
       //supress exception if bad or non-writable session folder is used
     end;
   end;
+
+  DoPyEvent_AppState(APPSTATE_SESSION_SAVE_AFTER);
 
   if FileExists(sSessionFileName) then
   begin
@@ -577,7 +596,7 @@ var
   sItemPath, sItemPath2: string;
   nCountFiles, nCountFilesModified, nCountFilesBefore, nCountFilesDeleted: integer;
   bModified, bModified2: boolean;
-  bAllowOnState: boolean;
+  bAllowOnState, bReusedEmptyFrame: boolean;
   sText: UnicodeString;
   sUndoString, sRedoString: string;
   bExist, bExist2: boolean;
@@ -628,6 +647,8 @@ begin
   nCountFiles:= 0;
   nCountFilesModified:= 0;
   nCountFilesDeleted:= 0;
+  bReusedEmptyFrame:= false;
+  sOpenOptions:= '';
 
   AppFileCheckForNullBytes(sSessionFileName);
 
@@ -693,8 +714,6 @@ begin
       sRedoString:= cfg.GetValue(sItemPath+'redo', '');
       sTabKind:= cfg.GetValue(sItemPath+'kind', '');
       bModified:= cfg.GetValue(sItemPath+'modified', false);
-      if sText='' then //don't load this file from session
-        bModified:= false;
 
       //support old sessions with 1-based group index
       nGroupIndex:= cfg.GetValue(sItemPath+'group', 1)-1;
@@ -768,8 +787,11 @@ begin
       if bModified then
       begin
         Inc(nCountFilesModified);
-        if (FrameCount>0) and Frames[0].IsEmpty then
-          Frame:= Frames[0]
+        if (not bReusedEmptyFrame) and (FrameCount=1 {or >0 ?}) and Frames[0].IsEmpty then
+        begin
+          bReusedEmptyFrame:= true;
+          Frame:= Frames[0];
+        end
         else
           Frame:= DoFileOpen('', '', Pages, SOptionPassive+SOptionNoHistory);
         if sTabFilename<>'' then
@@ -780,7 +802,7 @@ begin
         end;
         if sText<>'' then
         begin
-          Frame.InitProgressForm(Frame.Editor, 'session "'+ExtractFileName(AppFile_Session)+'"', Length(sText));
+          Frame.InitProgressForm(Frame.Editor, 'session "'+ExtractFileName(sSessionFileName)+'"', Length(sText));
           Frame.Editor.Text:= sText;
           Frame.Editor.Strings.Endings:= nLineEnds;
           Frame.HideProgressForm(Frame.Editor);
@@ -790,14 +812,21 @@ begin
         if sRedoString<>'' then
           Frame.Editor.RedoAsString:= sRedoString;
         Frame.Editor.Modified:= bModified;
+        //UpdateModified call must be before Frame.TabCaption:=..., it overwrites TabCaption
+        Frame.UpdateModified(Frame.Editor);
+
         sTabTitle:= cfg.GetValue(sItemPath+'tab_title', '');
         if sTabTitle<>'' then
           Frame.TabCaption:= sTabTitle;
+
         if sTabFilename<>'' then
           Frame.TabCaptionReason:= TAppTabCaptionReason.FromFilename
         else
-          Frame.TabCaptionReason:= TAppTabCaptionReason.Unsaved;
-        Frame.UpdateModified(Frame.Editor);
+          Frame.TabCaptionReason:= TAppTabCaptionReason.UnsavedSpecial;
+          //2026.07: it was Unsaved, changed to UnsavedSpecial
+          //to avoid updating TabCaption, restored from session, during Frame.UpdateModified
+
+        Frame.NotifEnabled:= sTabFilename<>'';
       end
       else
       //unmodified+named tabs must load file again
@@ -820,7 +849,7 @@ begin
 
       if Assigned(Frame) then
       begin
-        Frame.InSession:= true;
+        Frame.IsLoadedFromSession:= true;
         Frame.DoLoadHistoryEx(Frame.Ed1, cfg, sItemPath, true);
 
         if sTabFilename2<>'' then
@@ -963,16 +992,10 @@ begin
   //it's needed in on_state
   AppSessionName:= ASessionId;
 
+  DoOps_SaveCurrentSessionName;
+
   if bAllowOnState then
-  begin
     DoPyEvent_AppState(APPSTATE_SESSION_LOAD);
-    {
-    if (nCountFilesBefore>0) or (nCountFiles+nCountFilesModified>0) then
-      DoPyEvent_AppState(APPSTATE_SESSION_LOAD)
-    else
-      DoPyEvent_AppState(APPSTATE_SESSION_LOAD_FAIL);
-    }
-  end;
 
   //avoid getting N tabs for untitled of which only N-1 are translated
   LocalizeTabTitles;
@@ -991,9 +1014,7 @@ begin
       Ed.DoEventCarets();
   end;
 
-  SetLength(FPrevFramesEditState, FrameCount_ForSession);
-  for iFrame:= 0 to Length(FPrevFramesEditState)-1 do
-    FPrevFramesEditState[iFrame].Assign(Frames[iFrame]);
+  UpdateFramePrevStates;
 end;
 
 procedure TfmMain.DoOps_LoadHistory_GroupView(cfg: TAppJsonConfig; const AJsonPath: string);
@@ -1187,7 +1208,9 @@ begin
 
       FLastSelectedCommand:= cfg.GetValue('last_cmd', FLastSelectedCommand);
       DoOps_LoadHistory_GroupView(cfg, '');
-    end;
+    end
+    else
+      AppSessionName:= cAppSessionNone;
 
     FOption_SidebarTab:= cfg.GetValue('tab_left', '');
     FOption_BottomTab:= cfg.GetValue('tab_bottom', '');
@@ -1644,7 +1667,7 @@ begin
   UiOps.StatusPanels:= cfg.GetValue('ui_statusbar_panels', UiOps.StatusPanels);
   UiOps.StatusTime:= Max(1, Min(60, cfg.GetValue('ui_statusbar_time', UiOps.StatusTime)));
 
-  UiOps.ShowTitlePath:= cfg.GetValue('ui_title_path', UiOps.ShowTitlePath);
+  UiOps.ShowTitle:= cfg.GetValue('ui_title', UiOps.ShowTitle);
 
   UiOps.ReopenSession:= cfg.GetValue('ui_reopen_session', UiOps.ReopenSession);
   UiOps.ReopenSessionWithCmdLine:= cfg.GetValue('ui_reopen_session_cmdline', UiOps.ReopenSessionWithCmdLine);
@@ -1855,6 +1878,7 @@ begin
 
   UiOps.PyCaretSlow:= Max(20, cfg.GetValue('py_caret_slow', UiOps.PyCaretSlow));
   UiOps.PyChangeSlow:= Max(20, cfg.GetValue('py_change_slow', UiOps.PyChangeSlow));
+  UiOps.PyChangeSlowMaxSeconds:= Max(6, cfg.GetValue('py_change_slow_limit', UiOps.PyChangeSlowMaxSeconds));
 
   UiOps.LogPluginIniting:= cfg.GetValue('py_init_log', UiOps.LogPluginIniting);
   UiOps.LogSessions:= cfg.GetValue('log_sessions', UiOps.LogSessions);
@@ -2125,5 +2149,25 @@ begin
 
   if bDisFree then
     SetShowDistractionFree_Forced;
+end;
+
+procedure TfmMain.DoOps_SaveCurrentSessionName;
+var
+  cfg: TAppJsonConfig;
+begin
+  if IsNoneSessionActive then exit;
+
+  cfg:= TAppJsonConfig.Create(nil);
+  try
+    try
+      cfg.Filename:= AppFile_History;
+      cfg.SetValue('session'+cOptionSystemSuffix, AppSessionName_ForHistoryFile);
+    except
+      on E: Exception do
+        MsgBadConfig(AppFile_History, E.Message);
+    end;
+  finally
+    FreeAndNil(cfg);
+  end;
 end;
 

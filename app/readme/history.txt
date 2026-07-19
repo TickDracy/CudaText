@@ -3,6 +3,21 @@
   - fixed
   * changed
 
+1.235.1 (2026/07)
+
++ add: CSS lexer: better show code-tree nodes, now they are fragments to nearest lefter '}'
++ add: better calc new untitled tab-caption like 'Untitled3' when e.g. opened tabs are 'Untitled2' and 'Untitled1' (thanks @badrelmers)
+
+1.235.0 (2026/07)
+
+* change/add: option "ui_title_path" removed; instead added option "ui_title" with more details
+* change/add: when command-line switch -nsl / -ns is used, app activates new special session name "-", app never saves such session file, app doesn't store this session name to "history.json"
++ add: new APIs for future plugin: new session manager by @badrelmers
++ add: option "py_change_slow_limit" (idea by @badrelmers)
+- fix: for _modified_ file loaded from session, 'external change notification' did not work (thanks @badrelmers)
+- fix: regression: ui-tab titles were not restored from session (thanks @badrelmers)
+- fix: regression in 1.234.6: sessions saving had new bugs
+
 1.234.6 (2026/07)
 
 * change: deleted some deprecated scrolling-related APIs, so you must update plugins from Addons-Manager

@@ -165,6 +165,8 @@ type
     FTextCharsTyped: integer;
     FTextChange: array[0..1] of boolean;
     FTextChangeSlow: array[0..1] of boolean;
+    FTextChangeBegin: array[0..1] of QWord;
+    FIsWelcome: boolean;
     FGotoInput: UnicodeString;
     FCodetreeFilter: string;
     FCodetreeFilterHistory: TStringList;
@@ -200,8 +202,7 @@ type
     FTabSizeChanged: boolean;
     FTabSpacesChanged: boolean;
     FTabKeyCollectMarkers: boolean;
-    FInSession: boolean;
-    FInHistory: boolean;
+    FIsLoadedFromSession: boolean;
     FMacroRecord: boolean;
     FImageBox: TATImageBox;
     FViewer: TATBinHex;
@@ -297,10 +298,12 @@ type
     function GetCachedTreeviewInited(Ed: TATSynEdit): boolean;
     function GetCachedTreeview(Ed: TATSynEdit): TTreeView;
     function GetTextChangeSlow(EdIndex: integer): boolean;
+    function GetTextChangeBegin(EdIndex: integer): QWord;
     function GetWordWrap: TATEditorWrapMode;
     procedure HandleProgressButtonCancel(Sender: TObject);
     procedure HandleStringsProgress(Sender: TObject; var ACancel: boolean);
     procedure SetTextChangeSlow(EdIndex: integer; AValue: boolean);
+    procedure SetTextChangeBegin(EdIndex: integer; AValue: QWord);
     function GetEnabledCodeTree(Ed: TATSynEdit): boolean;
     function GetEnabledFolding: boolean;
     function GetFileWasBig(Ed: TATSynEdit): boolean;
@@ -357,6 +360,7 @@ type
     procedure SetSplitHorz(AValue: boolean);
     procedure SetSplitPos(AValue: double);
     procedure SetSplitted(AValue: boolean);
+    procedure SetNotifEnabled(AValue: boolean);
     procedure SetTabCaption(const AValue: string);
     procedure SetLineEnds(Ed: TATSynEdit; AValue: TATLineEnds);
     procedure SetUnprintedSpaces(AValue: boolean);
@@ -431,7 +435,7 @@ type
     procedure UpdateFrame(AUpdatedText: boolean);
     procedure FixLexerIfDeleted(Ed: TATSynEdit; const ALexerName: string);
 
-    property NotifEnabled: boolean read FNotifEnabled write FNotifEnabled;
+    property NotifEnabled: boolean read FNotifEnabled write SetNotifEnabled;
     property NotifDeletedEnabled: boolean read FNotifDeletedEnabled write FNotifDeletedEnabled;
     procedure NotifyAboutChange(Ed: TATSynEdit);
 
@@ -458,22 +462,23 @@ type
     property TabSizeChanged: boolean read FTabSizeChanged write FTabSizeChanged;
     property TabSpacesChanged: boolean read FTabSpacesChanged write FTabSpacesChanged;
     property TabKeyCollectMarkers: boolean read GetTabKeyCollectMarkers write FTabKeyCollectMarkers;
-    property InSession: boolean read FInSession write FInSession;
-    property InHistory: boolean read FInHistory write FInHistory;
     property TextCharsTyped: integer read FTextCharsTyped write FTextCharsTyped;
     property TextChangeSlow[EdIndex: integer]: boolean read GetTextChangeSlow write SetTextChangeSlow;
+    property TextChangeBegin[EdIndex: integer]: QWord read GetTextChangeBegin write SetTextChangeBegin;
     property EnabledCodeTree[Ed: TATSynEdit]: boolean read GetEnabledCodeTree write SetEnabledCodeTree;
     property CodetreeFilter: string read FCodetreeFilter write FCodetreeFilter;
     property CodetreeFilterHistory: TStringList read FCodetreeFilterHistory;
     property CodetreeSortType: TSortType read FCodetreeSortType write FCodetreeSortType;
     property GotoInput: UnicodeString read FGotoInput write FGotoInput;
     function IsEmpty: boolean;
-    procedure ApplyLexerStyleMap;
-    procedure LexerReparse;
-    procedure ApplyTheme;
     function IsEditorFocused: boolean;
+    property IsWelcome: boolean read FIsWelcome write FIsWelcome;
+    property IsLoadedFromSession: boolean read FIsLoadedFromSession write FIsLoadedFromSession;
+    procedure ApplyLexerStyleMap;
+    procedure ApplyTheme;
     function FrameKind: TAppFrameKind;
     procedure SetFocus; reintroduce;
+    procedure LexerReparse;
     function PictureSizes: TPoint;
     property PictureScale: integer read GetPictureScale write SetPictureScale;
     property Viewer: TATBinHex read FViewer;
@@ -525,7 +530,7 @@ type
     procedure DoSaveBookmarks(Ed: TATSynEdit; c: TAppJsonConfig);
     //misc
     function DoPyEvent(AEd: TATSynEdit; AEvent: TAppPyEvent; const AParams: TAppVariantArray): TAppPyEventResult;
-    procedure DoPyEventState(Ed: TATSynEdit; AState: integer);
+    procedure DoPyEventStateEd(Ed: TATSynEdit; AState: integer);
     function DoPyEvent_Macro(const AText: string): boolean;
     procedure DoRemovePreviewStyle;
     procedure DoToggleFocusSplitEditors;
@@ -689,6 +694,13 @@ end;
 
 { TEditorFrame }
 
+procedure TEditorFrame.SetNotifEnabled(AValue: boolean);
+//method is for debugging
+begin
+  if FNotifEnabled=AValue then Exit;
+  FNotifEnabled:= AValue;
+end;
+
 procedure TEditorFrame.SetTabCaption(const AValue: string);
 var
   bUpdate: boolean;
@@ -699,7 +711,7 @@ begin
   FTabCaption:= AValue; //don't check bUpdate here (for Win32)
 
   if bUpdate then
-    DoPyEventState(Ed1, EDSTATE_TAB_TITLE);
+    DoPyEventStateEd(Ed1, EDSTATE_TAB_TITLE);
 
   DoOnChangeCaption;
 end;
@@ -1518,7 +1530,7 @@ begin
   Ed.ModeReadOnly:= AValue;
   if (Ed=Ed1) and EditorsLinked then
     Ed2.ModeReadOnly:= AValue;
-  DoPyEventState(Ed, EDSTATE_READONLY);
+  DoPyEventStateEd(Ed, EDSTATE_READONLY);
 end;
 
 procedure TEditorFrame.UpdateEds(AUpdateWrapInfo: boolean = false);
@@ -1771,12 +1783,25 @@ begin
   TimerChange.Interval:= UiOps.PyChangeSlow;
   TimerChange.Enabled:= true;
 
-  EdIndex:= EditorObjToIndex(Ed);
-  if EdIndex>=0 then
-    FTextChange[EdIndex]:= true;
-
   if Assigned(FOnChange) then
     FOnChange(Ed);
+
+  EdIndex:= EditorObjToIndex(Ed);
+  if EdIndex>=0 then
+  begin
+    FTextChange[EdIndex]:= true;
+
+    if FTextChangeBegin[EdIndex]=0 then
+      FTextChangeBegin[EdIndex]:= GetTickCount64
+    else
+    if GetTickCount64-FTextChangeBegin[EdIndex]>=UiOps.PyChangeSlowMaxSeconds*1000 then
+    begin
+      FTextChangeBegin[EdIndex]:= 0;
+      FTextChangeSlow[EdIndex]:= false;
+      TimerChange.Enabled:= false;
+      DoPyEvent(Ed, TAppPyEvent.OnChangeSlow, []);
+    end;
+  end;
 end;
 
 procedure TEditorFrame.EditorOnChangeDetailed(Sender: TObject;
@@ -1823,7 +1848,7 @@ begin
     EdOther.Update;
   EdOther.ModifiedBookmarks:= true;
 
-  DoPyEventState(Sender as TATSynEdit, EDSTATE_BOOKMARK);
+  DoPyEventStateEd(Sender as TATSynEdit, EDSTATE_BOOKMARK);
 end;
 
 procedure TEditorFrame.EditorOnChangeZoom(Sender: TObject);
@@ -1839,7 +1864,7 @@ begin
     N:= 100;
   OnMsgStatus(Self, Format(msgStatusFontSizeChanged, [N]));
 
-  DoPyEventState(Ed, EDSTATE_ZOOM);
+  DoPyEventStateEd(Ed, EDSTATE_ZOOM);
 end;
 
 procedure TEditorFrame.UpdateModified(Ed: TATSynEdit; AWithEvent: boolean);
@@ -1851,7 +1876,7 @@ begin
   UpdateCaptionFromFilename;
 
   if AWithEvent then
-    DoPyEventState(Ed, EDSTATE_MODIFIED);
+    DoPyEventStateEd(Ed, EDSTATE_MODIFIED);
 end;
 
 procedure TEditorFrame.UpdatePinned(Ed: TATSynEdit; AWithEvent: boolean);
@@ -1860,7 +1885,7 @@ begin
     DoRemovePreviewStyle;
 
   if AWithEvent then
-    DoPyEventState(Ed, EDSTATE_PINNED);
+    DoPyEventStateEd(Ed, EDSTATE_PINNED);
 end;
 
 procedure TEditorFrame.EditorOnPaint(Sender: TObject);
@@ -2092,14 +2117,14 @@ begin
 
     cCommand_ToggleReadOnly:
       begin
-        DoPyEventState(Ed, EDSTATE_READONLY);
+        DoPyEventStateEd(Ed, EDSTATE_READONLY);
         exit;
       end;
 
     cCommand_ToggleWordWrap,
     cCommand_ToggleWordWrapAlt:
       begin
-        DoPyEventState(Ed, EDSTATE_WRAP);
+        DoPyEventStateEd(Ed, EDSTATE_WRAP);
         //DoOnUpdateStatusbar('wrap'); //not needed, OnChangeState fires
         exit;
       end;
@@ -2400,7 +2425,7 @@ begin
   Inc(FLastTabId);
   FTabId:= FLastTabId;
   FTabImageIndex:= -1;
-  FInSession:= false;
+  FIsLoadedFromSession:= false;
   FEnabledCodeTree[0]:= true;
   FEnabledCodeTree[1]:= true;
   FSaveHistory:= true;
@@ -3563,6 +3588,7 @@ begin
     Ed2.DoCaretsFixIncorrectPos(false);
   end;
 
+  Ed.Modified:= false;
   if Ed.Strings.Count=0 then exit;
 
   //restore props
@@ -3758,6 +3784,11 @@ begin
   Result:= FTextChangeSlow[EdIndex];
 end;
 
+function TEditorFrame.GetTextChangeBegin(EdIndex: integer): QWord;
+begin
+  Result:= FTextChangeBegin[EdIndex];
+end;
+
 function TEditorFrame.GetWordWrap: TATEditorWrapMode;
 begin
   case FrameKind of
@@ -3778,6 +3809,11 @@ end;
 procedure TEditorFrame.SetTextChangeSlow(EdIndex: integer; AValue: boolean);
 begin
   FTextChangeSlow[EdIndex]:= AValue;
+end;
+
+procedure TEditorFrame.SetTextChangeBegin(EdIndex: integer; AValue: QWord);
+begin
+  FTextChangeBegin[EdIndex]:= AValue;
 end;
 
 function TEditorFrame.GetEnabledCodeTree(Ed: TATSynEdit): boolean;
@@ -4415,7 +4451,7 @@ begin
       begin
         Ed.OptWrapMode:= TATEditorWrapMode(NFlag);
         Include(Ed.ModifiedOptions, TATEditorModifiedOption.WordWrap);
-        //DoPyEventState(Ed, EDSTATE_WRAP); //is not needed for session loading
+        //DoPyEventStateEd(Ed, EDSTATE_WRAP); //is not needed for session loading
       end;
 
     NFlag:= c.GetValue(path+cHistory_Micromap, -1);
@@ -4579,14 +4615,17 @@ begin
   end;
 end;
 
-procedure TEditorFrame.DoPyEventState(Ed: TATSynEdit; AState: integer);
+procedure TEditorFrame.DoPyEventStateEd(Ed: TATSynEdit; AState: integer);
 begin
   DoPyEvent(Ed, TAppPyEvent.OnStateEd, [AppVariant(AState)]);
 end;
 
 function TEditorFrame.DoPyEvent_Macro(const AText: string): boolean;
+var
+  Res: TAppPyEventResult;
 begin
-  Result:= DoPyEvent(Editor, TAppPyEvent.OnMacro, [AppVariant(AText)]).Val <> TAppPyEventValue.False;
+  Res:= DoPyEvent(Editor, TAppPyEvent.OnMacro, [AppVariant(AText)]);
+  Result:= Res.Val <> TAppPyEventValue.False;
 end;
 
 
@@ -4895,7 +4934,7 @@ end;
 
 procedure TEditorFrame.NotifyAboutChange(Ed: TATSynEdit);
 var
-  EdIndex: integer;
+  EdIndex, NEventState: integer;
   SFileName: string;
   bNewDeleted, bDeletedChanged: boolean;
   bShowPanel: boolean = true;
@@ -4909,6 +4948,17 @@ begin
   bNewDeleted:= not FileExists(SFileName);
   bDeletedChanged:= TabExtDeleted[EdIndex]<>bNewDeleted;
   TabExtDeleted[EdIndex]:= bNewDeleted;
+
+  if bDeletedChanged then
+  begin
+    if bNewDeleted then
+      NEventState:= EDSTATE_EXT_REMOVED
+    else
+      NEventState:= EDSTATE_EXT_APPEARED;
+  end
+  else
+    NEventState:= EDSTATE_EXT_MODIFIED;
+  DoPyEventStateEd(Ed, NEventState);
 
   if not bDeletedChanged then
     TabExtModified[EdIndex]:= true;
@@ -5470,7 +5520,7 @@ function TEditorFrame.TabCaptionConsideringPairAndFullpath: string;
 var
   Name1, Name2: string;
 begin
-  if UiOps.ShowTitlePath then
+  if Pos('p', UiOps.ShowTitle)>0 then
   begin
     if EditorsLinked then
     begin

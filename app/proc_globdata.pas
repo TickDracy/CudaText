@@ -73,26 +73,26 @@ type
 
 {$ifdef unix}
 var
-  AppUniqInst: TUniqueInstance = nil;
+  AppUniqInst: TUniqueInstance;
 
 function IsAnotherInstanceRunning: boolean;
 {$endif}
 
 var
-  AppFormShowCompleted: boolean = false;
-  AppAllowFrameParsing: boolean = false; //must be set in FormMain.OnShow
-  AppSessionIsLoading: boolean = false;
-  AppSessionIsClosing: boolean = false;
-  AppCommandHandlerIsBusy: boolean = false; //currently is set by 'close all' command only
-  AppActiveForm: TObject = nil;
+  AppFormShowCompleted: boolean;
+  AppAllowFrameParsing: boolean; //must be set in FormMain.OnShow
+  AppSessionIsLoading: boolean;
+  AppSessionIsClosing: boolean;
+  AppCommandHandlerIsBusy: boolean; //currently is set by 'close all' command only
+  AppActiveForm: TObject;
   AppThemeStatusbar: TATFlatTheme;
-  AppApiOnStartActivated: boolean = false;
-  AppApiDialogCounter: integer = 0;
-  AppDroppedFiles: array of string = nil;
-  AppDroppingFiles: boolean = false;
-  AppClosingTabs: boolean = false;
-  AppOpeningFile: boolean = false;
-  AppWindowsSettingChanged: boolean = false; //Win32: it's set by WM_SETTINGCHANGE message
+  AppApiOnStartActivated: boolean;
+  AppApiDialogCounter: integer;
+  AppDroppedFiles: array of string;
+  AppDroppingFiles: boolean;
+  AppClosingTabs: boolean;
+  AppOpeningFile: boolean;
+  AppWindowsSettingChanged: boolean; //Win32: it's set by WM_SETTINGCHANGE message
 
   AppCodetreeState: record
     Editor: TATSynEdit; //app never deref-s this pointer (never accesses its properties), to avoid crash after ui-tab was closed
@@ -103,7 +103,7 @@ var
     NeedsSelJump: boolean;
   end;
 
-  AppLexersLastDetected: TStringList = nil;
+  AppLexersLastDetected: TStringList;
 
 type
   TAppNewTabNearCurrent = (
@@ -145,6 +145,7 @@ const
 
 const
   cAppSessionDefault = 'default'+cOptionSystemSuffix+'.cuda-session';
+  cAppSessionNone = '-.cuda-session';
 
 const
   cAppMaxGroup = Pred(6+3); //6 normal groups + 3 floating groups
@@ -158,28 +159,31 @@ var
       Color: TColor;
     end;
 var
-  AppListRecents: TStringList = nil;
-  AppListTimers: TStringList = nil;
-  AppStatusbarMessages: TStringList = nil;
-  AppBookmarkImagelist: TImageList = nil;
+  AppListRecents: TStringList;
+  AppListTimers: TStringList;
+  AppStatusbarMessages: TStringList;
+  AppBookmarkImagelist: TImageList;
   AppApiFlatTheme: TATFlatTheme;
-  AppAlwaysNewInstance: boolean = false;
-  AppSessionName: string = '';
+  AppAlwaysNewInstance: boolean;
+  AppSessionName: string;
   AppServerId: string = 'cudatext.0'; //used by TUniqueInstance (which is used only on Unix)
 
 var
-  AppFrameList1: TFPList = nil;
+  AppFrameList1: TFPList;
     //all frames - for main thread
 
-  AppFrameList2: TFPList = nil;
+  AppFrameList2: TFPList;
     //all frames - for file watcher thread
 
-  AppFrameListDeleting: TFPList = nil;
+  AppFrameListDeleting: TFPList;
     //frames which need to be Free'd
     //we don't free frames instantly, because watcher thread can access them
 
-  AppEventLister: TEvent = nil; //event set to signaled, when main thread has done AppFrameList2 updating
-  AppEventWatcher: TEvent = nil; //event set to signaled, when watcher thread is not busy
+  AppUntitledNumbersList: TFPList;
+    //temp list in TfmMain.GetUntitledNumberedCaption
+
+  AppEventLister: TEvent; //event set to signaled, when main thread has done AppFrameList2 updating
+  AppEventWatcher: TEvent; //event set to signaled, when watcher thread is not busy
 
 type
   { TAppKeyValues }
@@ -198,9 +202,9 @@ type
   end;
 
 var
-  AppConfig_Detect: TAppKeyValues = nil;
-  AppConfig_DetectLine: TAppKeyValues = nil;
-  AppConfig_PluginGroups: TAppKeyValues = nil;
+  AppConfig_Detect: TAppKeyValues;
+  AppConfig_DetectLine: TAppKeyValues;
+  AppConfig_PluginGroups: TAppKeyValues;
 
 const
   AppExtensionThemeUi = '.cuda-theme-ui';
@@ -233,6 +237,7 @@ type
     PyLibrary: UnicodeString;
     PyCaretSlow: integer;
     PyChangeSlow: integer;
+    PyChangeSlowMaxSeconds: integer;
     PyOutputCopyToStdout: boolean;
 
     MaxLineLenForEditingKeepingLexer: integer;
@@ -311,7 +316,6 @@ type
 
     TabsShowFoldersSuffix: boolean;
     TabsShowFoldersMaxLevels: integer;
-    TabsResetUntitledCounter: boolean;
     TabsDisabled: boolean;
     TabVarWidth: boolean;
     TabMultiline: boolean;
@@ -450,7 +454,7 @@ type
     ShowMenubar: boolean;
     ShowStatusbar: boolean;
     ShowToolbar: boolean;
-    ShowTitlePath: boolean;
+    ShowTitle: string;
     ShowSidebarMenuButton: integer;
     ShowSidePanelTitle: boolean;
 
@@ -767,32 +771,32 @@ var
   EditorOps_CenteringDistFree: TAppStringIntegerMap;
 
 var
-  AppUserName: string = '';
-  AppDir_Home: string = ''; //OS home dir
-  AppDir_Settings: string = '';
-  AppDir_SettingsDefault: string = '';
-  AppDir_SettingsParent: string = ''; //dir which contains AppDir_Settings
-  AppDir_Py: string = '';
-  AppDir_Data: string = '';
-  AppDir_Lexers: string = '';
-  AppDir_LexersLite: string = '';
-  AppDir_DataThemes: string = '';
-  AppDir_DataAutocomplete: string = '';
-  AppDir_DataAutocompleteSpec: string = '';
-  AppDir_DataLang: string = '';
-  AppDir_DataSidebarIcons: string = '';
-  AppDir_DataCodetreeIcons: string = '';
-  AppDir_DataToolbarIcons: string = '';
-  AppDir_LastInstalledAddon: string = '';
-  AppFile_OptionsDefaultEnglish: string = '';
-  AppFile_OptionsUserInit: string = '';
-  AppFile_OptionsUser: string = '';
-  AppFile_History: string = '';
-  AppFile_HistoryFiles: string = '';
-  AppFile_Bookmarks: string = '';
-  AppFile_Hotkeys: string = '';
-  AppFile_PluginsIni: string = '';
-  AppFile_LogConsole: string = '';
+  AppUserName: string;
+  AppDir_Home: string; //OS home dir
+  AppDir_Settings: string;
+  AppDir_SettingsDefault: string;
+  AppDir_SettingsParent: string; //dir which contains AppDir_Settings
+  AppDir_Py: string;
+  AppDir_Data: string;
+  AppDir_Lexers: string;
+  AppDir_LexersLite: string;
+  AppDir_DataThemes: string;
+  AppDir_DataAutocomplete: string;
+  AppDir_DataAutocompleteSpec: string;
+  AppDir_DataLang: string;
+  AppDir_DataSidebarIcons: string;
+  AppDir_DataCodetreeIcons: string;
+  AppDir_DataToolbarIcons: string;
+  AppDir_LastInstalledAddon: string;
+  AppFile_OptionsDefaultEnglish: string;
+  AppFile_OptionsUserInit: string;
+  AppFile_OptionsUser: string;
+  AppFile_History: string;
+  AppFile_HistoryFiles: string;
+  AppFile_Bookmarks: string;
+  AppFile_Hotkeys: string;
+  AppFile_PluginsIni: string;
+  AppFile_LogConsole: string;
 
 function AppFile_OptionsDefault: string; // data/langdefault/default.ru_RU.json
 function AppFile_Session: string;
@@ -809,6 +813,7 @@ function AppFile_IsIgnoredForSession(const AFilename: string): boolean;
 function AppSessionName_ForHistoryFile: string;
 function IsDefaultSession(const S: string): boolean;
 function IsDefaultSessionActive: boolean;
+function IsNoneSessionActive: boolean;
 
 function IsSetToOneInstance: boolean;
 function InitPyLibraryPath: string;
@@ -887,13 +892,13 @@ function AppKeyIsAllowedAsCustomHotkey(Key: Word; Shift: TShiftState): boolean;
 procedure AppKeymapsClear;
 
 var
-  AppManager: TecLexerList = nil;
-  AppManagerLite: TATLiteLexers = nil;
-  AppShortcutEscape: TShortcut = 0;
-  AppShortcutShiftTab: TShortcut = 0;
+  AppManager: TecLexerList;
+  AppManagerLite: TATLiteLexers;
+  AppShortcutEscape: TShortcut;
+  AppShortcutShiftTab: TShortcut;
 
-  AppKeymapMain: TATKeymap = nil;
-  AppKeymapInitial: TATKeymap = nil; //inited only by API calls
+  AppKeymapMain: TATKeymap;
+  AppKeymapInitial: TATKeymap; //inited only by API calls
 
 type
   TAppKeymaps = specialize TFPGMap<string, TATKeymap>;
@@ -1020,6 +1025,7 @@ type
     OnGotoEnter,
     OnFuncHint,
     OnTabChange,
+    OnTabAdd,
     OnTabMove,
     OnTabMenu,
     OnPaste,
@@ -1035,6 +1041,7 @@ type
     OnSidebarPopup,
     OnStateFindbar,
     OnCLI,
+    OnExitBefore,
     OnExit
     );
   TAppPyEvents = set of TAppPyEvent;
@@ -1095,6 +1102,7 @@ const
     'on_goto_enter',
     'on_func_hint',
     'on_tab_change',
+    'on_tab_add',
     'on_tab_move',
     'on_tab_menu',
     'on_paste',
@@ -1110,6 +1118,7 @@ const
     'on_sidebar_popup',
     'on_state_findbar',
     'on_cli',
+    'on_exit_pre',
     'on_exit'
     );
 
@@ -1146,12 +1155,12 @@ type
   end;
 
 var
-  AppConsoleQueue: TAppConsoleQueue = nil;
-  AppCommandsDelayed: TAppCommandsDelayed = nil;
-  AppCommandList: TFPList = nil; //has plugin commands from install.inf files
-  AppCommand2List: TFPList = nil; //has plugin sub-commands, ie added by API app_proc()
-  AppEventList: TFPList = nil;
-  AppTreeHelpers: TFPList = nil;
+  AppConsoleQueue: TAppConsoleQueue;
+  AppCommandsDelayed: TAppCommandsDelayed;
+  AppCommandList: TFPList; //has plugin commands from install.inf files
+  AppCommand2List: TFPList; //has plugin sub-commands, ie added by API app_proc()
+  AppEventList: TFPList;
+  AppTreeHelpers: TFPList;
 
 procedure AppClearPluginLists;
 
@@ -1251,13 +1260,13 @@ type
   end;
 
 var
-  AppManagerThread: TAppManagerThread = nil;
+  AppManagerThread: TAppManagerThread;
 
 type
   TAppAutocompleteCallback = procedure(Ed: TATSynEdit; AActivate: boolean) of object;
 
 var
-  AppRunAutocomplete: TAppAutocompleteCallback = nil;
+  AppRunAutocomplete: TAppAutocompleteCallback;
 
 type
   TAppAutocompleteInvoke = (
@@ -2162,7 +2171,6 @@ begin
 
     TabsShowFoldersSuffix:= true;
     TabsShowFoldersMaxLevels:= 3;
-    TabsResetUntitledCounter:= true;
     TabsDisabled:= false;
     TabVarWidth:= false;
     TabMultiline:= false;
@@ -2275,6 +2283,7 @@ begin
     PyLibrary:= '';
     PyCaretSlow:= 100;
     PyChangeSlow:= 1500;
+    PyChangeSlowMaxSeconds:= 30;
     PyOutputCopyToStdout:= false;
 
     MaxLineLenForEditingKeepingLexer:= 2000;
@@ -2323,7 +2332,7 @@ begin
     ShowMenubar:= true;
     ShowStatusbar:= true;
     ShowToolbar:= false;
-    ShowTitlePath:= false;
+    ShowTitle:= 'd';
     ShowSidebarMenuButton:= 2;
     ShowSidePanelTitle:= true;
 
@@ -3906,6 +3915,11 @@ begin
   Result:= IsDefaultSession(AppSessionName);
 end;
 
+function IsNoneSessionActive: boolean;
+begin
+  Result:= ExtractFileName(AppSessionName)=cAppSessionNone;
+end;
+
 function AppFile_OptionsDefault: string;
 var
   fn: string;
@@ -4284,6 +4298,7 @@ initialization
   AppFrameList1:= TFPList.Create;
   AppFrameList2:= TFPList.Create;
   AppFrameListDeleting:= TFPList.Create;
+  AppUntitledNumbersList:= TFPList.Create;
   AppEventLister:= TEvent.Create(nil, true, true, '');
   AppEventWatcher:= TEvent.Create(nil, true, true, '');
 
@@ -4346,6 +4361,7 @@ finalization
   FreeAndNil(AppListRecents);
   FreeAndNil(AppEventWatcher);
   FreeAndNil(AppEventLister);
+  FreeAndNil(AppUntitledNumbersList);
   FreeAndNil(AppFrameListDeleting);
   FreeAndNil(AppFrameList2);
   FreeAndNil(AppFrameList1);

@@ -11,41 +11,45 @@ procedure TfmMain.UpdateCaption_FloatingGroup(AFloatingIndex: integer; AForm: TF
 var
   F: TEditorFrame;
   SName: string;
+  bAllowAppTitle,
+  bAllowFloatingIndicator: boolean;
 begin
   if AForm=nil then exit;
   if AGroups=nil then exit;
 
-  F:= CurrentFrameEx(AGroups);
+  F:= TGroupsHelper.GetActiveFrameOfGroups(AGroups);
   if F=nil then
     SName:= ''
   else
     SName:= F.TabCaptionConsideringPairAndFullpath;
 
-  AForm.Caption:= SName + (' - ' + msgTitle) + Format(' [f%d]', [AFloatingIndex+1]);
+  bAllowAppTitle:= Pos('n', UiOps.ShowTitle)=0;
+  bAllowFloatingIndicator:= Pos('f', UiOps.ShowTitle)=0;
+
+  AForm.Caption:= SName +
+    IfThen(bAllowAppTitle, ' - ' + msgTitle) +
+    IfThen(bAllowFloatingIndicator, Format(' [f%d]', [AFloatingIndex+1]));
 end;
 
 procedure TfmMain.UpdateCaption;
-begin
-  // before, we only set FNeedUpdateCaption to True, so TimerAppIdle
-  // did the work. now, we update caption immediately.
-  //FNeedUpdateCaption:= true;
-
-  UpdateCaption_RealWork;
-end;
-
-
-procedure TfmMain.UpdateCaption_RealWork;
 var
   F: TEditorFrame;
   SName, SSession, SSessionRootPath: string;
+  bAllowSessionName,
+  bHideDefaultSession,
+  bAllowAppTitle: boolean;
 begin
-  F:= CurrentFrameEx(GroupsMain);
+  F:= TGroupsHelper.GetActiveFrameOfGroups(GroupsMain);
   if F=nil then exit;
+
+  bAllowSessionName:= Pos('s', UiOps.ShowTitle)=0;
+  bHideDefaultSession:= Pos('d', UiOps.ShowTitle)>0;
+  bAllowAppTitle:= Pos('n', UiOps.ShowTitle)=0;
 
   SSplitByChar(AppSessionName, '|', SSession, SSessionRootPath);
   SSession:= ExtractFileName(SSession);
-  if (SSession<>'') and
-    (SSession<>cAppSessionDefault) then
+  if (SSession<>'') and bAllowSessionName and
+    not (bHideDefaultSession and IsDefaultSessionActive) then
   begin
     if SBeginsWith(SSessionRootPath, '/sessions/') then
       Delete(SSessionRootPath, 1, Length('/sessions/'));
@@ -66,7 +70,8 @@ begin
       SName:= msgUntitledTab;
   end;
 
-  Caption:= SName + SSession + (' - ' + msgTitle);
+  Caption:= SName + SSession +
+    IfThen(bAllowAppTitle, ' - ' + msgTitle);
 
   Application.Title:= msgModifiedString[F.Modified] + F.TabCaption + (' - ' + msgTitle);
 
@@ -716,7 +721,7 @@ begin
   if AFrame.FrameKind=TAppFrameKind.Editor then
     AFrame.DoSaveHistory(Ed);
 
-  if (not AFrame.InSession) or IsDefaultSessionActive then
+  if (not AFrame.IsLoadedFromSession) or IsDefaultSessionActive then
     SAddStringToHistory(
       AppCollapseHomeDirInFilename(SFileName),
       AppListRecents,
@@ -1915,14 +1920,36 @@ begin
 end;
 
 procedure TfmMain.UpdateMenuSidebarButton(AWhenAutoShow: boolean);
+var
+  Btn: TATButton;
 begin
   if ToolbarSideTop.ButtonCount>0 then
-    with ToolbarSideTop.Buttons[0] do
-      if OnClick=@DoSidebar_MainMenuClick then
-        case UiOps.ShowSidebarMenuButton of
-          0: Visible:= false;
-          1: Visible:= true;
-          2: Visible:= AWhenAutoShow;
-        end;
+  begin
+    Btn:= ToolbarSideTop.Buttons[0];
+    if Btn.OnClick=@DoSidebar_MainMenuClick then
+      case UiOps.ShowSidebarMenuButton of
+        0: Btn.Visible:= false;
+        1: Btn.Visible:= true;
+        2: Btn.Visible:= AWhenAutoShow;
+      end;
+  end;
+end;
+
+procedure TfmMain.UpdateFramePrevStates;
+var
+  Frame: TEditorFrame;
+  iFrame, iFrameNew: integer;
+begin
+  iFrameNew:= 0;
+  SetLength(FPrevFramesEditState, FrameCount_ForSession);
+  for iFrame:= 0 to FrameCount-1 do
+  begin
+    Frame:= Frames[iFrame];
+    if Frame.IsEmpty then Continue;
+    if Frame.IsWelcome then Continue;
+    if iFrameNew>High(FPrevFramesEditState) then Break;
+    FPrevFramesEditState[iFrameNew].Assign(Frame);
+    Inc(iFrameNew);
+  end;
 end;
 

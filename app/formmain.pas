@@ -867,6 +867,7 @@ type
     procedure DoOnTabFocusFinalization(F: TEditorFrame;
       AAllowEventOnTabChange: boolean);
     procedure DoOnTabAdd(Sender: TObject);
+    procedure DoOnTabAdded(Sender: TObject; ATabIndex: integer);
     procedure DoOnTabClose(Sender: TObject; ATabIndex: Integer; var ACanClose, ACanContinue: boolean);
     procedure DoOnTabMove(Sender: TObject; AIndexFrom, AIndexTo: Integer);
     procedure DoOnTabPopup(Sender: TObject; APages: TATPages; ATabIndex: integer);
@@ -1041,6 +1042,7 @@ type
     procedure DoOps_LoadOptionsAndApplyAll;
     procedure DoOps_LoadOptionsLexerSpecific(F: TEditorFrame; Ed: TATSynEdit);
     procedure DoOps_OpenFile_LexerSpecific;
+    procedure DoOps_SaveCurrentSessionName;
     procedure DoOps_LoadPlugins(AKeepHotkeys: boolean);
     procedure DoOps_DialogFont(var OpName: UnicodeString; var OpSize: integer;
       const AConfigStrName, AConfigStrSize: UnicodeString);
@@ -1169,6 +1171,7 @@ type
     procedure UpdateMenuChecks_FrameSplit(F: TEditorFrame);
     procedure UpdateMenuChecks_Global;
     procedure UpdateFrameLineEnds(Frame: TEditorFrame; Ed: TATSynEdit; ALineEnds: TATLineEnds);
+    procedure UpdateFramePrevStates;
     procedure UpdateEditorCaretLineEnds(Frame: TEditorFrame; Ed: TATSynEdit; ALineEnds: TATLineEnds);
     procedure UpdateStatusbarPanelsFromString(const AText: string);
     procedure UpdateStatusbarHints;
@@ -1185,7 +1188,6 @@ type
     procedure UpdateTreeSelection(Ed: TATSynEdit);
     procedure UpdateTreeImagelistActivity;
     procedure UpdateCaption;
-    procedure UpdateCaption_RealWork;
     procedure UpdateCaption_FloatingGroup(AFloatingIndex: integer; AForm: TForm; AGroups: TATGroups);
     procedure UpdateEnabledAll(b: boolean);
     procedure UpdateFormPos(Form: TForm; AndHeight: boolean=true);
@@ -1210,7 +1212,7 @@ type
     procedure FrameOnChangeCaption(Sender: TObject);
     procedure FrameOnUpdateStatusbar(Sender: TObject; AReason: TAppStatusbarUpdateReason);
     procedure FrameOnUpdateState(Sender: TObject);
-    function CreateTab(APages: TATPages; const ACaption: string;
+    function CreateTab(APages: TATPages; const AFileName, ATabCaption: string;
       AndActivate: boolean=true;
       AAllowNearCurrent: TAppNewTabNearCurrent=TAppNewTabNearCurrent.ByOption): TATTabData;
     procedure FrameOnEditorFocus(Sender: TObject);
@@ -1241,7 +1243,6 @@ type
     property Frames[N: integer]: TEditorFrame read GetFrame;
     function CurrentGroups: TATGroups;
     function CurrentFrame: TEditorFrame;
-    function CurrentFrameEx(AGroups: TATGroups): TEditorFrame;
     function CurrentEditor: TATSynEdit;
     property FloatingForms: boolean read GetFloatingForms;
     property ShowFloatingForm1: boolean read GetShowFloatingForm1 write SetShowFloatingForm1;
@@ -1499,6 +1500,7 @@ type
 
   TGroupsHelper = class
   public
+    class function GetActiveFrameOfGroups(AGroups: TATGroups): TEditorFrame;
     class function GetEditorFrame(Ed: TATSynEdit): TEditorFrame;
     class function GetEditorBrother(Ed: TATSynEdit): TATSynEdit;
     class function GetEditorFirstSecond(Ed: TATSynEdit; AFirst: boolean): TATSynEdit;
@@ -1508,6 +1510,20 @@ type
     class function FindPagesUnderCursorPos(ACursorPos: TPoint; AGroups: TATGroups): TATPages;
     class procedure GetGroupAndTabIndexes(Ed: TATSynEdit; out AGroupIndex, ATabIndex: integer);
   end;
+
+
+class function TGroupsHelper.GetActiveFrameOfGroups(AGroups: TATGroups): TEditorFrame;
+var
+  Pages: TATPages;
+  D: TATTabData;
+begin
+  Pages:= AGroups.PagesCurrent;
+  D:= Pages.Tabs.GetTabData(Pages.Tabs.TabIndex);
+  if Assigned(D) and Assigned(D.TabObject) and (D.TabObject is TEditorFrame) then
+    Result:= D.TabObject as TEditorFrame
+  else
+    Result:= nil;
+end;
 
 class function TGroupsHelper.GetEditorFrame(Ed: TATSynEdit): TEditorFrame;
 var
@@ -1519,22 +1535,6 @@ begin
   else
     Result:= nil;
 end;
-
-(*
-function GetEditorFrame(Ed: TATSynEdit): TEditorFrame;
-//1st parent is TFormDummy, 2nd parent is TEditorFrame
-var
-  Ctl: TWinControl;
-begin
-  Result:= nil;
-  if Ed=nil then exit;
-  Ctl:= Ed.Parent;
-  if Ctl=nil then exit;
-  Ctl:= Ctl.Parent;
-  if Ctl is TEditorFrame then
-    Result:= TEditorFrame(Ctl);
-end;
-*)
 
 class function TGroupsHelper.GetEditorBrother(Ed: TATSynEdit): TATSynEdit;
 var
@@ -2557,6 +2557,7 @@ var
   STemp: string;
   Frame: TEditorFrame;
   NTick: QWord;
+  iEditorIndex: integer;
 begin
   //in Lazarus 2.1 trunk on Linux x64 gtk2/qt5, TimerAppIdle.Timer is called too early,
   //when Handle is not created
@@ -2626,19 +2627,16 @@ begin
       UpdateTree(false);
     end;
 
-  //fire on_change_idle
+  //fire on_change_slow
   if Assigned(Frame) then
   begin
-    if Frame.TextChangeSlow[0] then
-    begin
-      Frame.TextChangeSlow[0]:= false;
-      DoPyEvent(Frame.Ed1, TAppPyEvent.OnChangeSlow, []);
-    end;
-    if Frame.TextChangeSlow[1] then
-    begin
-      Frame.TextChangeSlow[1]:= false;
-      DoPyEvent(Frame.Ed2, TAppPyEvent.OnChangeSlow, []);
-    end;
+    for iEditorIndex:= 0 to 1 do
+      if Frame.TextChangeSlow[iEditorIndex] then
+      begin
+        Frame.TextChangeSlow[iEditorIndex]:= false;
+        Frame.TextChangeBegin[iEditorIndex]:= 0;
+        DoPyEvent(Frame.EditorIndexToObj(iEditorIndex), TAppPyEvent.OnChangeSlow, []);
+      end;
   end;
 
   if FNeedUpdateMenuShortcuts then
@@ -3004,6 +3002,7 @@ begin
   GroupsMain.OnChangeMode:= @DoOnChangeGroupMode;
   GroupsMain.OnTabFocus:= @DoOnTabFocus;
   GroupsMain.OnTabAdd:= @DoOnTabAdd;
+  GroupsMain.OnTabAdded:= @DoOnTabAdded;
   GroupsMain.OnTabClose:= @DoOnTabClose;
   GroupsMain.OnTabMove:= @DoOnTabMove;
   GroupsMain.OnTabPopup:= @DoOnTabPopup;
@@ -3299,7 +3298,8 @@ begin
   DoOps_SaveHistory(
     AppFile_History,
     UiOps.SaveModifiedTabsOnClose,
-    UiOps.ReopenSession //2025.04: change it to UiOps.SessionSaveOnExit ?
+    UiOps.SessionSaveOnExit
+    //UiOps.ReopenSession //2025.04: change it to UiOps.SessionSaveOnExit ?
     );
 
   {$ifndef windows}
@@ -3475,9 +3475,17 @@ end;
 
 procedure TfmMain.FormCloseQuery(Sender: TObject; var ACanClose: boolean);
 var
+  Res: TAppPyEventResult;
   F: TEditorFrame;
   i: integer;
 begin
+  Res:= DoPyEvent(nil, TAppPyEvent.OnExitBefore, []);
+  if Res.Val=TAppPyEventValue.False then
+  begin
+    ACanClose:= false;
+    exit;
+  end;
+
   //call on_close_pre for all tabs, it's needed to save all
   //tabs by AutoSave plugin
   for i:= 0 to FrameCount-1 do
@@ -4178,6 +4186,7 @@ begin
     if Frame.IsEmpty then
     begin
       Ed:= Frame.Ed1;
+      Frame.IsWelcome:= true;
       Frame.TabCaption:= msgWelcomeTabTitle;
       Frame.TabCaptionReason:= TAppTabCaptionReason.UnsavedSpecial;
       SText:= msgFirstStartInfo;
@@ -4186,8 +4195,7 @@ begin
       Ed.Strings.LoadFromString(SText);
       Ed.UpdateWrapInfo(true);
       Ed.Modified:= false;
-      Frame.InSession:= false;
-      Frame.InHistory:= false;
+      Frame.IsLoadedFromSession:= false;
     end;
   end;
 end;
@@ -5011,7 +5019,7 @@ begin
 
   if AFileName='' then
   begin
-    D:= CreateTab(APages, '', bAndActivate, AllowNear);
+    D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), bAndActivate, AllowNear);
     if not Assigned(D) then
     begin
       D:= GroupsMain.Pages1.Tabs.GetTabData(0);
@@ -5180,7 +5188,7 @@ begin
       if UiOps.TabsDisabled then
         D:= APages.Tabs.GetTabData(0)
       else
-        D:= CreateTab(APages, 'pre', true, TAppNewTabNearCurrent.Disabled);
+        D:= CreateTab(APages, AFileName, 'pre', true, TAppNewTabNearCurrent.Disabled);
       if not Assigned(D) then exit;
       UpdateTabPreviewStyle(D, true);
       Result:= D.TabObject as TEditorFrame;
@@ -5281,7 +5289,7 @@ begin
   end;
 
   //did not find frame to reuse, create new frame
-  D:= CreateTab(APages, ExtractFileName(AFileName), false{AndActivate}, AllowNear);
+  D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), false{AndActivate}, AllowNear);
   if not Assigned(D) then
   begin
     D:= GroupsMain.Pages1.Tabs.GetTabData(0);
@@ -9043,6 +9051,7 @@ begin
 
     G.OnTabFocus:= @DoOnTabFocus;
     G.OnTabAdd:= @DoOnTabAdd;
+    G.OnTabAdded:= @DoOnTabAdded;
     G.OnTabClose:= @DoOnTabClose;
     G.OnTabMove:= @DoOnTabMove;
     G.OnTabPopup:= @DoOnTabPopup;
@@ -9820,49 +9829,54 @@ begin
 end;
 
 
-function TfmMain.GetUntitledNumberedCaption: string;
+function CalcIndexOfUntitledTabCaption(const S: string): integer;
 const
-  AppUntitledCount: integer = 0;
+  cDefault = 0;
+begin
+  Result:= cDefault;
+  if IsUntitledEnglishTabCaption(S) then
+  begin
+    Result:= StrToIntDef(Copy(S, Length(msgUntitledEnglish)+1), cDefault);
+  end
+  else
+  if (UiOps.LangName<>'') and SBeginsWith(S, msgUntitledTab) then
+  begin
+    Result:= StrToIntDef(Copy(S, Length(msgUntitledTab)+1), cDefault);
+  end;
+end;
+
+function TfmMain.GetUntitledNumberedCaption: string;
 var
   Frame: TEditorFrame;
-  NCount, NTabIndex: integer;
-  S: string;
+  NFrameCount, NTabIndex, NFirstFreeIndex, i: integer;
 begin
-  //reset the counter, when many tabs were opened, but were closed later
-  if UiOps.TabsResetUntitledCounter then
+  NFirstFreeIndex:= 1;
+  NFrameCount:= FrameCount;
+  if NFrameCount>0 then
   begin
-    NCount:= FrameCount;
-    if NCount=0 then
-      AppUntitledCount:= 0
-    else
-    if NCount=1 then
+    AppUntitledNumbersList.Clear;
+    AppUntitledNumbersList.Capacity:= 20; //20 is enough for usually few opened untitled tabs
+
+    for i:= 0 to NFrameCount-1 do
     begin
-      NTabIndex:= -1;
-      Frame:= Frames[0];
-      if Frame.FileName='' then
-      begin
-        S:= Frame.TabCaption;
-        if IsUntitledEnglishTabCaption(S) then
-        begin
-          Delete(S, 1, Length(msgUntitledEnglish));
-          NTabIndex:= StrToIntDef(S, 0);
-        end
-        else
-        if (UiOps.LangName<>'') and SBeginsWith(S, msgUntitledTab) then
-        begin
-          Delete(S, 1, Length(msgUntitledTab));
-          NTabIndex:= StrToIntDef(S, 0);
-        end;
-      end;
+      Frame:= Frames[i];
+      if Frame.FileName<>'' then Continue;
+      NTabIndex:= CalcIndexOfUntitledTabCaption(Frame.TabCaption);
       if NTabIndex>0 then
-        AppUntitledCount:= NTabIndex
-      else
-        AppUntitledCount:= 0;
+        AppUntitledNumbersList.Add(Pointer(PtrInt(NTabIndex)));
     end;
+
+    for i:= 1{>0} to MaxInt do
+      if AppUntitledNumbersList.IndexOf(Pointer(PtrInt(i)))<0 then
+      begin
+        NFirstFreeIndex:= i;
+        Break;
+      end;
+
+    AppUntitledNumbersList.Clear;
   end;
 
-  Inc(AppUntitledCount);
-  Result:= msgUntitledTab+IntToStr(AppUntitledCount);
+  Result:= msgUntitledTab+IntToStr(NFirstFreeIndex);
 end;
 
 procedure TfmMain.PopupBottomClearClick(Sender: TObject);
@@ -10403,7 +10417,6 @@ begin
   Ada:= Sender as TATAdapterEControl;
   FrameOnEditorShow(Ada.Editor);
 end;
-
 
 //----------------------------
 {$I formmain_loadsave.inc}

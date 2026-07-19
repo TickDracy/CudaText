@@ -3640,15 +3640,7 @@ begin
         PROP_IN_SESSION:
           begin
             if Assigned(Frame) then
-              Result:= PyBool_FromLong(Ord(Frame.InSession))
-            else
-              Result:= ReturnFalse;
-          end;
-
-        PROP_IN_HISTORY:
-          begin
-            if Assigned(Frame) then
-              Result:= PyBool_FromLong(Ord(Frame.InHistory))
+              Result:= PyBool_FromLong(Ord(Frame.IsLoadedFromSession))
             else
               Result:= ReturnFalse;
           end;
@@ -5412,6 +5404,7 @@ begin
           begin
             AppSessionName:= Str;
             fmMain.UpdateCaption;
+            fmMain.DoOps_SaveCurrentSessionName;
             Result:= ReturnNone;
           end;
 
