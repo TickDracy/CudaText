@@ -106,6 +106,13 @@ var
   AppLexersLastDetected: TStringList;
 
 type
+  TAppTabCaptionReason = (
+    Unsaved,
+    UnsavedSpecial,
+    FromFilename,
+    FromPlugin
+    );
+
   TAppNewTabNearCurrent = (
     Disabled,
     Enabled,
@@ -165,7 +172,7 @@ var
   AppBookmarkImagelist: TImageList;
   AppApiFlatTheme: TATFlatTheme;
   AppAlwaysNewInstance: boolean;
-  AppSessionName: string;
+  AppSessionName_: string;
   AppServerId: string = 'cudatext.0'; //used by TUniqueInstance (which is used only on Unix)
 
 var
@@ -1250,6 +1257,9 @@ function Lexer_IsNameCorrect(AName: string): boolean;
 
 procedure AppOnLexerLoaded(Sender: TObject; ALexer: TecSyntAnalyzer);
 procedure AppLoadLexers;
+
+function ConvertStringToTabCaptionReason(const S: string; out Value: TAppTabCaptionReason): boolean;
+function ConvertTabCaptionReasonToString(Value: TAppTabCaptionReason): string;
 
 type
   { TAppManagerThread }
@@ -2883,15 +2893,15 @@ var
 begin
   if not UiOps.ReopenSession then exit('');
 
-  SSplitByChar(AppSessionName, '|', sFilename, sJsonPath);
+  SSplitByChar(AppSessionName_, '|', sFilename, sJsonPath);
 
   sDir:= ExtractFileDir(sFilename);
-  if sDir='' then exit(AppSessionName);
+  if sDir='' then exit(AppSessionName_);
 
   if SameFileName(sDir, AppDir_Settings) then
     Result:= ExtractFileName(sFilename)+IfThen(sJsonPath<>'', '|'+sJsonPath)
   else
-    Result:= AppSessionName;
+    Result:= AppSessionName_;
 end;
 
 class function TKeymapHelper.GetHotkey(AKeymap: TATKeymap; const ACmdString: string): string;
@@ -3912,12 +3922,12 @@ end;
 
 function IsDefaultSessionActive: boolean;
 begin
-  Result:= IsDefaultSession(AppSessionName);
+  Result:= IsDefaultSession(AppSessionName_);
 end;
 
 function IsNoneSessionActive: boolean;
 begin
-  Result:= ExtractFileName(AppSessionName)=cAppSessionNone;
+  Result:= ExtractFileName(AppSessionName_)=cAppSessionNone;
 end;
 
 function AppFile_OptionsDefault: string;
@@ -3937,7 +3947,7 @@ function AppFile_Session: string;
 var
   sFilename, sJsonPath: string;
 begin
-  Result:= AppSessionName;
+  Result:= AppSessionName_;
   if Result='' then
     Result:= cAppSessionDefault;
 
@@ -4118,7 +4128,7 @@ type
   end;
 
 var
-  AppUniqInstDummy: TAppUniqInstDummy = nil;
+  AppUniqInstDummy: TAppUniqInstDummy;
 
 function IsAnotherInstanceRunning: boolean;
 var
@@ -4245,6 +4255,33 @@ begin
   if UiOps.ThemedMainMenu then
     MenuStyler.ApplyToForm(AForm);
   {$endif}
+end;
+
+const
+  cAppTabCaptionReasonStr: array[TAppTabCaptionReason] of char = (
+    'u',
+    's',
+    'f',
+    'p'
+    );
+
+function ConvertStringToTabCaptionReason(const S: string; out Value: TAppTabCaptionReason): boolean;
+var
+  r: TAppTabCaptionReason;
+begin
+  for r:= Low(TAppTabCaptionReason) to High(TAppTabCaptionReason) do
+    if S=cAppTabCaptionReasonStr[r] then
+    begin
+      Value:= r;
+      exit(true);
+    end;
+  Value:= TAppTabCaptionReason.Unsaved;
+  Result:= false;
+end;
+
+function ConvertTabCaptionReasonToString(Value: TAppTabCaptionReason): string;
+begin
+  Result:= cAppTabCaptionReasonStr[Value];
 end;
 
 
@@ -4375,11 +4412,6 @@ finalization
   FreeAndNil(AppBookmarkImagelist);
 
   AppClearPluginLists;
-  //FreeAndNil(AppTreeHelpers);
-  //FreeAndNil(AppEventList);
-  //FreeAndNil(AppCommand2List);
-  //FreeAndNil(AppCommandList);
-
   AppConsoleQueue.Push(''); // fix for #5037: Adds dummy data to avoid exception on free
   FreeAndNil(AppConsoleQueue);
   FreeAndNil(AppCommandsDelayed);
@@ -4388,7 +4420,6 @@ finalization
     FreeAndNil(AppLexersLastDetected);
 
   //AppFreeListTimers; //somehow gives crash on exit, if TerminalPlus was used, in timer_proc(TIMER_DELETE...)
-  //AppClearPluginLists;
 
   {$ifdef unix}
   if Assigned(AppUniqInst) then

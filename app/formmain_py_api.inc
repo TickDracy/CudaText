@@ -14,13 +14,13 @@ const
   cPyUniqueTag: Int64 = 120; //initial value returned by app_proc(PROC_GET_UNIQUE_TAG)
 
 var
-  PyEscapeFlag: boolean = false; //Esc key was pressed in application
-  PyEditorMaybeDeleted: boolean = false; //command plugin maybe deleted the editor, e.g. 'close file' command does it
-  PyCurrentProject: string = ''; //full path of active Project Manager project (*.cuda-proj)
-  PyCurrentProjectFolder: string = ''; //currently opened folder in Project Manager
+  PyEscapeFlag: boolean; //Esc key was pressed in application
+  PyEditorMaybeDeleted: boolean; //command plugin maybe deleted the editor, e.g. 'close file' command does it
+  PyCurrentProject: string; //full path of active Project Manager project (*.cuda-proj)
+  PyCurrentProjectFolder: string; //currently opened folder in Project Manager
 
 var
-  AppEmmet: TEmmet = nil;
+  AppEmmet: TEmmet;
 
 procedure MsgLogConsoleOnDuplicateTreeNode(ANode: TTreeNode; const AFileName: string);
 var
@@ -44,18 +44,13 @@ begin
   MsgLogConsole(S);
 end;
 
-function ConvertStringToTabCaptionReason(const S: string; out Value: TAppTabCaptionReason): boolean;
-var
-  r: TAppTabCaptionReason;
+procedure AppSessionName_Set(const S: string);
 begin
-  for r:= Low(TAppTabCaptionReason) to High(TAppTabCaptionReason) do
-    if S=cAppTabCaptionReasonStr[r] then
-    begin
-      Value:= r;
-      exit(true);
-    end;
-  Value:= TAppTabCaptionReason.Unsaved;
-  Result:= false;
+  if AppSessionName_<>S then
+  begin
+    AppSessionName_:= S;
+    fmMain.DoPyEvent(nil, TAppPyEvent.OnState, [AppVariant(APPSTATE_SESSION_SET)]);
+  end;
 end;
 
 function PyHelper_ObjectHandle(Obj: TObject): PPyObject; inline;
@@ -3602,7 +3597,7 @@ begin
         PROP_TAB_TITLE_REASON:
           begin
             if Assigned(Frame) then
-              Result:= PyUnicodeFromString(cAppTabCaptionReasonStr[Frame.TabCaptionReason])
+              Result:= PyUnicodeFromString(ConvertTabCaptionReasonToString(Frame.TabCaptionReason))
             else
               Result:= ReturnNone;
           end;
@@ -4234,12 +4229,12 @@ var
   An, AnOut: TecSyntAnalyzer;
   ValueBool: boolean;
   ValueInt: Int64;
-  ScrollInfo: TATEditorScrollInfo;
+  //ScrollInfo: TATEditorScrollInfo;
   TempGroup: TATGroups;
   TempPages, TempPagesTo: TATPages;
   NLocalGroup, NGlobalGroup, NTab, NIndexNew, N1, N2: integer;
   LineEnd: TATLineEnds;
-  CaptionReason: TAppTabCaptionReason;
+  NCaptionReason: TAppTabCaptionReason;
 begin
   with AppPython.Engine do
     if Bool(PyArg_ParseTuple(Args, 'Lis:set_prop', @H, @Id, @Ptr)) then
@@ -4457,8 +4452,8 @@ begin
         PROP_TAB_TITLE_REASON:
           begin
             if Assigned(Frame) then
-              if ConvertStringToTabCaptionReason(Str, CaptionReason) then
-                Frame.TabCaptionReason:= CaptionReason;
+              if ConvertStringToTabCaptionReason(Str, NCaptionReason) then
+                Frame.TabCaptionReason:= NCaptionReason;
           end;
 
         PROP_TAB_PINNED:
@@ -5402,7 +5397,7 @@ begin
 
         APP_PROC_SET_SESSION:
           begin
-            AppSessionName:= Str;
+            AppSessionName_Set(Str);
             fmMain.UpdateCaption;
             fmMain.DoOps_SaveCurrentSessionName;
             Result:= ReturnNone;

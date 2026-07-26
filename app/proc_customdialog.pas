@@ -824,6 +824,7 @@ begin
   begin
     Ctl:= TEdit.Create(AForm);
     TEdit(Ctl).OnChange:= @AForm.DoOnChange;
+    TEdit(Ctl).OnUTF8KeyPress:= @AForm.DoOnMemoUTF8KeyPress;
     exit;
   end;
 
@@ -868,6 +869,7 @@ begin
     Ctl:= TEdit.Create(AForm);
     TEdit(Ctl).EchoMode:= emPassword;
     TEdit(Ctl).OnChange:= @AForm.DoOnChange;
+    TEdit(Ctl).OnUTF8KeyPress:= @AForm.DoOnMemoUTF8KeyPress;
     exit;
   end;
 
@@ -875,6 +877,7 @@ begin
   begin
     Ctl:= TSpinEdit.Create(AForm);
     TSpinEdit(Ctl).OnChange:= @AForm.DoOnChange;
+    TSpinEdit(Ctl).OnUTF8KeyPress:= @AForm.DoOnMemoUTF8KeyPress;
     exit;
   end;
 
@@ -884,6 +887,7 @@ begin
     TMemo(Ctl).WordWrap:= false;
     TMemo(Ctl).ScrollBars:= ssBoth;
     TMemo(Ctl).OnChange:= @AForm.DoOnChange;
+    TMemo(Ctl).OnUTF8KeyPress:= @AForm.DoOnMemoUTF8KeyPress;
     exit;
   end;
 
@@ -897,6 +901,7 @@ begin
   begin
     Ctl:= TComboBox.Create(AForm);
     TComboBox(Ctl).OnChange:= @AForm.DoOnChange;
+    TComboBox(Ctl).OnUTF8KeyPress:= @AForm.DoOnMemoUTF8KeyPress;
     TComboBox(Ctl).DropDownCount:= 20;
     exit;
   end;
@@ -1900,6 +1905,12 @@ begin
     exit;
   end;
 
+  if AName='on_key_press' then
+  begin
+    Props.FEventOnKeyPress:= AValue;
+    exit;
+  end;
+
   if AName='on_mouse_enter' then
   begin
     Props.FEventOnMouseEnter:= AValue;
@@ -2594,6 +2605,7 @@ begin
     SetDictKey_NotEmpty(Result, 'on_fold', Props.FEventOnFold);
     SetDictKey_NotEmpty(Result, 'on_unfold', Props.FEventOnUnfold);
     SetDictKey_NotEmpty(Result, 'on_listbox_draw_item', Props.FEventOnListboxDrawItem);
+    SetDictKey_NotEmpty(Result, 'on_key_press', Props.FEventOnKeyPress);
     SetDictKey_NotEmpty(Result, 'on_mouse_enter', Props.FEventOnMouseEnter);
     SetDictKey_NotEmpty(Result, 'on_mouse_exit', Props.FEventOnMouseExit);
     SetDictKey_NotEmpty(Result, 'on_mouse_down', Props.FEventOnMouseDown);

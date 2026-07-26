@@ -49,7 +49,7 @@ begin
 end;
 
 
-procedure TfmMain.HandleTimerCommand(Ed: TATSynEdit; CmdCode: integer; CmdInvoke: TATCommandInvoke);
+procedure TfmMain.HandleTimerCommand(Ed: TATSynEdit; ACommandCode: integer; ACommandInvoke: TATCommandInvoke);
 var
   Frame: TEditorFrame;
   EdGroup: TATGroups;
@@ -62,7 +62,7 @@ begin
   EdPages:= nil;
 
   if Assigned(Frame) then
-    case CmdCode of
+    case ACommandCode of
       cmd_FileClose,
       cmd_FileCloseOtherThis,
       cmd_FileCloseOtherAll:
@@ -73,7 +73,7 @@ begin
       end
     end;
 
-  case CmdCode of
+  case ACommandCode of
 
     cmd_FileClose:
       begin
@@ -101,6 +101,10 @@ begin
         CloseFormAutoCompletion;
 
         DoCloseAllTabs(false);
+        //why AClosePinned=False: we should respect pinned tabs as much as possible.
+        //using True will anyway show the confirmation on closing pinned tabs.
+        //if plugin needs to silently close _all_ tabs, it must loop over ed_handles()
+        //and for each ui-tab set PROP_TAB_PINNED (and PROP_MODIFIED) to False.
 
         Frame:= CurrentFrame;
         if Assigned(Frame) then
@@ -141,7 +145,7 @@ begin
       DoFileNew;
 
     cmd_FileNewMenu:
-      DoFileNewMenu(nil, CmdInvoke);
+      DoFileNewMenu(nil, ACommandInvoke);
 
     cmd_FileOpen:
       DoFileOpenDialog;
@@ -156,7 +160,7 @@ begin
       DoFileOpenDialog('/view-unicode /nozip /nopictures');
 
     cmd_FileOpenFolder:
-      DoFolderAdd(CmdInvoke);
+      DoFolderAdd(ACommandInvoke);
 
     cmd_FileOpen_NoPlugins:
       DoFileOpenDialog_NoPlugins;
@@ -517,7 +521,7 @@ begin
       DoPyResetPlugins;
 
     cmd_RunLastCommandPlugin:
-      DoPyRunLastPlugin(CmdInvoke);
+      DoPyRunLastPlugin(ACommandInvoke);
 
     cmd_RescanPythonPluginsInfFiles:
       DoPyRescanPlugins;
@@ -577,7 +581,7 @@ begin
     cmd_MoveTabToGroupNext,
     cmd_MoveTabToGroupPrev:
       begin
-        GroupsMain.MoveCurrentTabToNext(CmdCode=cmd_MoveTabToGroupNext);
+        GroupsMain.MoveCurrentTabToNext(ACommandCode=cmd_MoveTabToGroupNext);
         UpdateCaption;
         UpdateTabsActiveColor(CurrentFrame);
       end;
@@ -750,20 +754,20 @@ begin
 
     cmdFirstLexerCommand..
     cmdLastLexerCommand:
-      SetFrameLexerByIndex(Ed, CmdCode-cmdFirstLexerCommand);
+      SetFrameLexerByIndex(Ed, ACommandCode-cmdFirstLexerCommand);
 
     cmdFirstPluginCommand..
     cmdLastPluginCommand:
-      DoPyCommand_ByCommandInfo(TAppCommandInfo(AppCommandList[CmdCode-cmdFirstPluginCommand]), CmdInvoke);
+      DoPyCommand_ByCommandInfo(TAppCommandInfo(AppCommandList[ACommandCode-cmdFirstPluginCommand]), ACommandInvoke);
 
     cmdFirstPluginSubCommand..
     cmdLastPluginSubCommand:
-      DoPyCommand_ByCommandInfo(TAppCommandInfo(AppCommand2List[CmdCode-cmdFirstPluginSubCommand]), CmdInvoke);
+      DoPyCommand_ByCommandInfo(TAppCommandInfo(AppCommand2List[ACommandCode-cmdFirstPluginSubCommand]), ACommandInvoke);
 
     cmdFirstFileCommand..
     cmdLastFileCommand:
       begin
-        NIndex:= CmdCode-cmdFirstFileCommand;
+        NIndex:= ACommandCode-cmdFirstFileCommand;
         if NIndex<AppFrameList1.Count then
         begin
           Frame:= TEditorFrame(AppFrameList1[NIndex]);
@@ -775,7 +779,7 @@ begin
     cmdFirstRecentCommand..
     cmdLastRecentCommand:
       begin
-        NIndex:= CmdCode-cmdFirstRecentCommand;
+        NIndex:= ACommandCode-cmdFirstRecentCommand;
         if NIndex<AppListRecents.Count then
           DoFileOpen(AppListRecents[NIndex], '');
       end;
@@ -792,7 +796,7 @@ begin
     cmd_HelpCheckUpdates:
       begin
         if UiOps.AllowProgramUpdates then
-          DoPyCommand('cuda_addonman', 'check_cudatext_updates', [], CmdInvoke);
+          DoPyCommand('cuda_addonman', 'check_cudatext_updates', [], ACommandInvoke);
       end;
   end;
 end;

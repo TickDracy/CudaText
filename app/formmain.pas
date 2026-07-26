@@ -778,7 +778,7 @@ type
     procedure DoFocusNextGroup(ANext: boolean);
     function GetFileOpenOptionsString(AFileCount: integer): string;
     function HandleRenameCheckAllowed(const AFileName: string): boolean;
-    procedure HandleTimerCommand(Ed: TATSynEdit; CmdCode: integer; CmdInvoke: TATCommandInvoke);
+    procedure HandleTimerCommand(Ed: TATSynEdit; ACommandCode: integer; ACommandInvoke: TATCommandInvoke);
     procedure InvalidateMouseoverDependantControls;
     function IsAnyFrameTextModified: boolean;
     function IsTooManyTabsOpened: boolean;
@@ -3232,12 +3232,20 @@ end;
 
 function TfmMain.DoCloseAllTabs(AClosePinned: boolean): boolean;
 var
+  F: TEditorFrame;
   List: array of TATGroups;
   i: integer;
 begin
   Result:= false;
-
   AppClosingTabs:= true;
+
+  //focus 1st tab (fixes appearing of empty tab on loading session with active group 2)
+  if FrameCount>0 then
+  begin
+    F:= Frames[0];
+    F.SetFocus;
+    GroupsMain.PagesCurrent:= GroupsMain.Pages1;
+  end;
 
   List:= [GroupsMain, GroupsFloating1, GroupsFloating2, GroupsFloating3];
   for i:= High(List) downto 0 do
@@ -3964,6 +3972,8 @@ procedure TfmMain.FormShow(Sender: TObject);
        UiOps.ReopenSession and
        (FOption_AllowSessionLoad=TAppAllowSomething.Enable) then
       DoOps_LoadSession(AppFile_Session, false);
+    if not UiOps.ReopenSession then
+      AppSessionName_Set(cAppSessionNone);
   end;
   //
   procedure _Init_FrameFocus;
@@ -6610,19 +6620,9 @@ begin
 end;
 
 function TfmMain.DoFileCloseAll(AWithCancel, AClosePinned: boolean): boolean;
-var
-  F: TEditorFrame;
 begin
   if not ConfirmAllFramesAreSaved(AWithCancel) then
     exit(false);
-
-  //focus 1st tab (fixes appearing of empty tab on loading session with active group 2)
-  if FrameCount>0 then
-  begin
-    F:= Frames[0];
-    F.SetFocus;
-    GroupsMain.PagesCurrent:= GroupsMain.Pages1;
-  end;
 
   DoCloseAllTabs(AClosePinned);
   Result:= true;
