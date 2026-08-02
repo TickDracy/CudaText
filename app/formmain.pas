@@ -941,7 +941,7 @@ type
     procedure DoFileExportHtml(Ed: TATSynEdit);
     function DoFileInstallZip(const AFileName: string; out DirTarget: string;
       ASilent, AAllowUpdateAddons: boolean): boolean;
-    procedure DoFileCloseAndDelete(Ed: TATSynEdit);
+    procedure DoFileCloseAndDelete(Frame: TEditorFrame);
     procedure DoFileNew;
     procedure DoFileNewMenu_ToolbarClick(Sender: TObject);
     procedure DoFileNewMenu(Sender: TObject; AInvoke: TATCommandInvoke);
@@ -3763,6 +3763,7 @@ begin
       begin
         EditorClearHiAllMarkers(Ed);
         fmFind.Hide;
+        fmFind.HandleFormHiding;
       end
       else
         Ed.SetFocus;
@@ -4935,6 +4936,7 @@ var
   bEnableEventPre, bEnableEventOpened, bEnableEventOpenedNone,
   bAllowZip, bAllowPics, bAllowLexerDetect, bAllowDeleted, bDetectedPics,
   bAllowUpdateAddons, bAndActivate: boolean;
+  bFileExists, bFileExists2: boolean;
   bFileTooBig, bFileTooBig2: boolean;
   AllowNear: TAppNewTabNearCurrent;
   OpenMode, NonTextMode: TAppOpenMode;
@@ -4950,6 +4952,8 @@ begin
   AppOpeningFile:= true;
 
  try
+  bFileExists:= (AFileName<>'') and FileExists(AFileName);
+  bFileExists2:= (AFileName2<>'') and FileExists(AFileName2);
   bFileTooBig:= IsFileTooBigForOpening(AFileName);
   bFileTooBig2:= IsFileTooBigForOpening(AFileName2);
 
@@ -5027,7 +5031,7 @@ begin
   if APages=nil then
     APages:= CurGroups.PagesCurrent;
 
-  if AFileName='' then
+  if (AFileName='') and (not bFileExists2) then
   begin
     D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), bAndActivate, AllowNear);
     if not Assigned(D) then
@@ -5037,7 +5041,10 @@ begin
     end;
     Result:= D.TabObject as TEditorFrame;
     Result.SetFocus;
-    Exit
+    if AFileName2='' then
+      Exit
+    else
+      Random(1);
   end;
 
   //expand "./name"
@@ -5045,7 +5052,7 @@ begin
   if AFileName<>'' then
   begin
     AFileName:= AppExpandFileName(AFileName);
-    if not bAllowDeleted and not FileExists(AFileName) then
+    if not bAllowDeleted and not bFileExists then
     begin
       MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName), MB_OK or MB_ICONERROR);
       Exit
@@ -5055,20 +5062,20 @@ begin
   if AFileName2<>'' then
   begin
     AFileName2:= AppExpandFileName(AFileName2);
-    if not bAllowDeleted and not FileExists(AFileName2) then
+    if not bAllowDeleted and not bFileExists2 then
     begin
       MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName2), MB_OK or MB_ICONERROR);
       Exit
     end;
   end;
 
-  if not bAllowDeleted and not FileIsReadable(AFileName) then
+  if (AFileName<>'') and not bAllowDeleted and not FileIsReadable(AFileName) then
   begin
     MsgBox(msgCannotOpenFile+#10+AFileName+#10#10+msgCannotOpenNoReadPermissions, MB_OK or MB_ICONERROR);
     exit;
   end;
 
-  if not bAllowDeleted and not FileIsReadable(AFileName2) then
+  if (AFileName2<>'') and not bAllowDeleted and not FileIsReadable(AFileName2) then
   begin
     AFileName2:= '';
   end;
@@ -5107,7 +5114,7 @@ begin
     if not bDetectedPics then
     if not AppSessionIsLoading then
     if UiOps.NonTextFiles<>1 then
-      if FileExists(AFileName) and not AppIsFileContentText(
+      if bFileExists and not AppIsFileContentText(
                AFileName,
                UiOps.NonTextFilesBufferKb,
                ATEditorOptions.DetectUTF16BufferWords,
@@ -5167,7 +5174,10 @@ begin
   end; //not binary
 
   //file already opened? activate its frame
-  F:= FindFrameOfFilename(AFileName);
+  if AFileName<>'' then
+    F:= FindFrameOfFilename(AFileName)
+  else
+    F:= nil;
   if F=nil then
     if AFileName2<>'' then
       F:= FindFrameOfFilename(AFileName2);
@@ -6629,14 +6639,13 @@ begin
 end;
 
 
-procedure TfmMain.DoFileCloseAndDelete(Ed: TATSynEdit);
+procedure TfmMain.DoFileCloseAndDelete(Frame: TEditorFrame);
 var
-  Frame: TEditorFrame;
+  TempPages: TATPages;
   fn, fnPic: string;
+  NTabIndex: integer;
 begin
-  Frame:= TGroupsHelper.GetEditorFrame(Ed);
   if Frame=nil then exit;
-
   CloseFormAutoCompletion;
 
   if not Frame.EditorsLinked then
@@ -6645,20 +6654,26 @@ begin
     exit;
   end;
 
-  fn:= Frame.GetFileName(Ed);
+  fn:= Frame.FileName;
   if fn='' then
   begin
     MsgStatus(msgCannotHandleUntitledTab);
     exit;
   end;
 
-  if Ed.Modified then
-    Ed.Modified:= false;
-
   if MsgBox(
        msgConfirmCloseAndDeleteFile+#10+AppCollapseHomeDirInFilename(fn),
        MB_OKCANCEL or MB_ICONWARNING)=ID_OK then
-    if GroupsMain.CloseTabs(tabCloseCurrent, false, true) then
+  begin
+    if Frame.Ed1.Modified then
+      Frame.Ed1.Modified:= false;
+
+    TempPages:= Frame.GetTabPages;
+    if not Assigned(TempPages) then exit;
+    NTabIndex:= TempPages.Tabs.FindTabByObject(Frame);
+    if NTabIndex<0 then exit;
+
+    if TempPages.Tabs.DeleteTab(NTabIndex, true, false) then
     begin
       DeleteFileUTF8(fn);
 
@@ -6671,6 +6686,7 @@ begin
 
       DoPyEvent(nil, TAppPyEvent.OnDeleteFile, [AppVariant(fn)]);
     end;
+  end;
 end;
 
 procedure TfmMain.DoFileNew;
@@ -7601,6 +7617,9 @@ begin
        (Frame.Ed2=AppCodetreeState.Editor) then
     begin
       Frame.CodetreeSortType:= CodeTree.Tree.SortType;
+      //user unchecks 'Sorted' -> rebuild the codetree
+      if Frame.CodetreeSortType=stNone then
+        UpdateTree(true);
       Break;
     end;
   end;
@@ -7829,6 +7848,7 @@ begin
 
     NRes:= DoDialogMenuList(msgStatusbarHintEnds, List, NSelected);
     if NRes<0 then exit;
+    if NRes=NSelected then exit;
 
     case NRes of
       0: Ed.DoCommand(cmd_LineEndUnix, TATCommandInvoke.AppPalette);

@@ -140,10 +140,8 @@ type
     NotifReloadAlways: array[0..1] of boolean;
     FTabCaption: string;
     FTabCaptionAddon: string;
-    FTabCaptionUntitled: string;
     FTabCaptionReason: TAppTabCaptionReason;
     FTabImageIndex: integer;
-    FTabId: integer;
     FFileName: string;
     FFileName2: string;
     FFileWasBig: array[0..1] of boolean;
@@ -184,8 +182,6 @@ type
     FTabColor: TColor;
     FTabFontColor: TColor;
     FTabPinned: boolean;
-    FTabSizeChanged: boolean;
-    FTabSpacesChanged: boolean;
     FTabKeyCollectMarkers: boolean;
     FIsLoadedFromSession: boolean;
     FMacroRecord: boolean;
@@ -379,6 +375,7 @@ type
     Groups: TATGroups;
     MacroStrings: TStringList;
     VersionInSession: Int64;
+    UniqueCounter: Int64;
     FileProps: array[0..1] of TAppFileProps;
     InitialOptions: array[0..1] of TEditorTempOptions;
     IsCaretInViewBeforeToggle: boolean;
@@ -398,11 +395,9 @@ type
     property WordWrap: TATEditorWrapMode read GetWordWrap;
     property TabCaption: string read FTabCaption write SetTabCaption;
     property TabCaptionAddon: string read FTabCaptionAddon write SetTabCaptionAddon;
-    property TabCaptionUntitled: string read FTabCaptionUntitled write FTabCaptionUntitled;
     property TabCaptionReason: TAppTabCaptionReason read FTabCaptionReason write FTabCaptionReason;
     function TabCaptionConsideringPairAndFullpath: string;
     property TabImageIndex: integer read FTabImageIndex write SetTabImageIndex;
-    property TabId: integer read FTabId;
     property TabIsPreview: boolean read GetIsPreview write SetIsPreview;
     property TabVisible: boolean read GetTabVisible write SetTabVisible;
     procedure UpdateCaptionFromFilename;
@@ -444,8 +439,6 @@ type
     property TabPinned: boolean read FTabPinned write SetTabPinned;
     property TabExtModified[EdIndex: integer]: boolean read GetTabExtModified write SetTabExtModified;
     property TabExtDeleted[EdIndex: integer]: boolean read GetTabExtDeleted write SetTabExtDeleted;
-    property TabSizeChanged: boolean read FTabSizeChanged write FTabSizeChanged;
-    property TabSpacesChanged: boolean read FTabSpacesChanged write FTabSpacesChanged;
     property TabKeyCollectMarkers: boolean read GetTabKeyCollectMarkers write FTabKeyCollectMarkers;
     property TextCharsTyped: integer read FTextCharsTyped write FTextCharsTyped;
     property TextChangeSlow[EdIndex: integer]: boolean read GetTextChangeSlow write SetTextChangeSlow;
@@ -582,6 +575,7 @@ uses
   ATStringProc_HtmlColor,
   ATSynEdit_Cmp_RenderHTML,
   ATStreamSearch,
+  proc_unique_counter,
   form_lexer_stylemap;
 
 {$R *.lfm}
@@ -610,19 +604,13 @@ const
   cHistory_Unpri_Detail = '/unprinted_end_details';
   cHistory_Unpri_Wraps  = '/unprinted_wraps';
   cHistory_Caret       = '/crt';
-  cHistory_TabColor    = '/color';
   cHistory_FoldingShow  = '/fold';
   cHistory_FoldedRanges = '/folded';
   cHistory_CodeTreeFilter = '/codetree_filter';
   cHistory_CodeTreeFilters = '/codetree_filters';
   cHistory_TabSplit    = '/split';
   cHistory_TabSplit_Mul = 1e5; //instead of float 0.6, save as int 0.6*1e5
-  cHistory_TabCaption  = '/tab_title';
-  cHistory_TabCaptionReason = '/tab_title_rsn';
   cHistory_Margin      = '/margin';
-
-var
-  FLastTabId: integer = 0;
 
 function GetMsgSuggestOptionsEditor: string;
 begin
@@ -723,38 +711,38 @@ procedure TEditorFrame.UpdateCaptionFromFilename;
 var
   Name1, Name2, SFinalCaption: string;
 begin
-  //avoid updating caption if API already had set it
-  if FTabCaptionReason in [TAppTabCaptionReason.UnsavedSpecial, TAppTabCaptionReason.FromPlugin] then
+  if (FTabCaptionReason in [TAppTabCaptionReason.UnsavedSpecial, TAppTabCaptionReason.FromPlugin]) or
+    ((FFileName2='') and (FTabCaptionReason<>TAppTabCaptionReason.FromFilename)) then
   begin
     DoOnChangeCaption; //remove 'modified' font color, repaint
     exit;
   end;
 
+  Name1:= '';
+  Name2:= '';
+
   if EditorsLinked then
   begin
     if FFileName='' then
-      Name1:= FTabCaptionUntitled
+      Name1:= msgUntitledTab
     else
       Name1:= ExtractFileName_Fixed(FFileName);
-    //Name1:= msgModifiedString[Ed1.Modified]+Name1;
 
     SFinalCaption:= Name1;
   end
   else
   begin
     if (FFileName='') and (FFileName2='') then
-      SFinalCaption:= FTabCaptionUntitled
+      SFinalCaption:= msgUntitledTab
     else
     begin
       Name1:= ExtractFileName_Fixed(FFileName);
       if Name1='' then
         Name1:= msgUntitledTab;
-      //Name1:= msgModifiedString[Ed1.Modified]+Name1;
 
       Name2:= ExtractFileName_Fixed(FFileName2);
       if Name2='' then
         Name2:= msgUntitledTab;
-      //Name2:= msgModifiedString[Ed2.Modified]+Name2;
 
       SFinalCaption:= Name1+' | '+Name2;
     end;
@@ -1896,6 +1884,9 @@ begin
     DoOnUpdateStatusbar(TAppStatusbarUpdateReason.FocusEnter);
   end;
 
+  //update crash-backup shadow reference (read by proc_crash_backup.pas)
+  AppCrashBackup_FocusedEditor:= Sender;
+
   if Assigned(FOnFocusEditor) then
     FOnFocusEditor(Sender);
 
@@ -2411,8 +2402,6 @@ begin
   FActiveSecondaryEd:= false;
   FTabColor:= clNone;
   FTabFontColor:= clNone;
-  Inc(FLastTabId);
-  FTabId:= FLastTabId;
   FTabImageIndex:= -1;
   FIsLoadedFromSession:= false;
   FEnabledCodeTree[0]:= true;
@@ -2460,8 +2449,8 @@ begin
   Adapter1.AddEditor(Ed2);
 
   //load options
-  EditorApplyOps(Ed1, EditorOps, true, true, AApplyCentering);
-  EditorApplyOps(Ed2, EditorOps, true, true, AApplyCentering);
+  EditorApplyOps(Ed1, EditorOps, true, AApplyCentering);
+  EditorApplyOps(Ed2, EditorOps, true, AApplyCentering);
   EditorApplyTheme(Ed1);
   EditorApplyTheme(Ed2);
 
@@ -2478,6 +2467,7 @@ begin
   St.EncodingDetectDefaultUtf8:= true; //UiOps.DefaultEncUtf8;
 
   Ed1.EncodingName:= AppEncodingShortnameToFullname(UiOps.NewdocEnc);
+  Ed2.EncodingName:= Ed1.EncodingName;
 
   //must clear Modified, it was set on initing
   Ed1.Modified:= false;
@@ -2485,6 +2475,8 @@ begin
 
   Ed1.IsIniting:= false;
   Ed2.IsIniting:= false;
+
+  UniqueCounter:= AppUniqueCounterInt64;
 end;
 
 destructor TEditorFrame.Destroy;
@@ -2990,7 +2982,8 @@ begin
 
   if not AAllowDeleted then
   begin
-    if not FileExists(AFileName) then exit;
+    if (AFileName<>'') then
+      if not FileExists(AFileName) then exit;
     if (AFileName2<>'') then
       if not FileExists(AFileName2) then exit;
   end;
@@ -3158,6 +3151,7 @@ begin
     try
       Ed.LoadFromFile(AFileName, LoadOptions);
       SetFileName(Ed, AFileName);
+      TabCaptionReason:= TAppTabCaptionReason.FromFilename;
       UpdateCaptionFromFilename;
     finally
       UpdateLocked(Ed, false);
@@ -3415,10 +3409,13 @@ begin
     TabExtModified[EdIndex]:= false;
     TabExtDeleted[EdIndex]:= false;
 
-    //add to recents new filename
     if bNameChanged then
+    begin
+      //add to recents new filename
       if Assigned(FOnAddRecent) then
         FOnAddRecent(Self, EdIndex);
+      TabCaptionReason:= TAppTabCaptionReason.FromFilename;
+    end;
 
     UpdateCaptionFromFilename;
 
@@ -4139,9 +4136,6 @@ begin
       c.DeleteValue(path+cHistory_TabSplit);
   end;
 
-  c.SetValue(path+cHistory_TabCaption, TabCaption);
-  c.SetValue(path+cHistory_TabCaptionReason, ConvertTabCaptionReasonToString(TabCaptionReason));
-
   if UiOps.HistoryItems[TAppHistoryElement.Lexer] then
     c.SetDeleteValue(path+cHistory_Lexer, LexerName[Ed], '');
 
@@ -4173,7 +4167,7 @@ begin
   if UiOps.HistoryItems[TAppHistoryElement.TabSize] then
   begin
     c.SetValue(path+cHistory_TabSize, Ed.OptTabSize);
-    c.SetValue(path+cHistory_TabSpace, Ed.OptTabSpaces);
+    c.SetValue(path+cHistory_TabSpace, Ord(Ed.OptTabSpaces));
   end;
 
   if UiOps.HistoryItems[TAppHistoryElement.Unprinted] then
@@ -4198,14 +4192,6 @@ begin
   begin
     c.SetDeleteValue(path+cHistory_FoldingShow, Ord(Ed.Gutter[Ed.Gutter.FindIndexByTag(ATEditorOptions.GutterTagFolding)].Visible), 1);
     c.SetDeleteValue(path+cHistory_FoldedRanges, Ed.FoldingAsString, '');
-  end;
-
-  if UiOps.HistoryItems[TAppHistoryElement.TabColor] then
-  begin
-    if TabColor=clNone then
-      c.DeleteValue(path+cHistory_TabColor)
-    else
-      c.SetValue(path+cHistory_TabColor, ColorToString(TabColor));
   end;
 
   if UiOps.HistoryItems[TAppHistoryElement.Caret] then
@@ -4337,7 +4323,6 @@ var
   nTop, i: integer;
   Sep: TATStringSeparator;
   NFlag: integer;
-  NCapReason: TAppTabCaptionReason;
 begin
   sFileName:= GetFileName(Ed);
 
@@ -4416,16 +4401,6 @@ begin
     end;
   end;
 
-  TabColor:= StringToColorDef(c.GetValue(path+cHistory_TabColor, ''), clNone);
-
-  str:= c.GetValue(path+cHistory_TabCaption, '');
-  if str<>'' then
-    TabCaption:= str;
-
-  str:= c.GetValue(path+cHistory_TabCaptionReason, '');
-  if (str<>'') and ConvertStringToTabCaptionReason(str, NCapReason) then
-    TabCaptionReason:= NCapReason;
-
   if not (TATEditorModifiedOption.ReadOnlyIsDetected in Ed.ModifiedOptions) then
     ReadOnly[Ed]:= c.GetValue(path+cHistory_ReadOnly, ReadOnly[Ed]);
 
@@ -4461,8 +4436,19 @@ begin
     Include(Ed.ModifiedOptions, TATEditorModifiedOption.RulerVisible);
   end;
 
-  Ed.OptTabSize:= c.GetValue(path+cHistory_TabSize, Ed.OptTabSize);
-  Ed.OptTabSpaces:= c.GetValue(path+cHistory_TabSpace, Ed.OptTabSpaces);
+  NFlag:= c.GetValue(path+cHistory_TabSize, -1);
+  if NFlag>=0 then
+  begin
+    Ed.OptTabSize:= NFlag;
+    Include(Ed.ModifiedOptions, TATEditorModifiedOption.TabSize);
+  end;
+
+  NFlag:= c.GetValue(path+cHistory_TabSpace, -1);
+  if NFlag>=0 then
+  begin
+    Ed.OptTabSpaces:= NFlag=1;
+    Include(Ed.ModifiedOptions, TATEditorModifiedOption.TabSpaces);
+  end;
 
   NFlag:= c.GetValue(path+cHistory_Unpri, -1);
   if NFlag>=0 then
@@ -4521,8 +4507,11 @@ begin
   end;
 
   NFlag:= c.GetValue(path+cHistory_Margin, -1);
-  if NFlag>=10 then
+  if NFlag>=ATEditorOptions.MinMarginRt then
+  begin
     Ed.OptMarginRight:= NFlag;
+    Include(Ed.ModifiedOptions, TATEditorModifiedOption.Margin);
+  end;
 
   Ed.OptScaleFont:= c.GetValue(path+cHistory_FontScale, 0);
 

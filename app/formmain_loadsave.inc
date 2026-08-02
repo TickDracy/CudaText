@@ -273,15 +273,15 @@ function TfmMain.DoOps_SaveSession(const ASessionId: string;
 var
   cfg, cfg_bookmarks: TAppJsonConfig;
   Frame: TEditorFrame;
-  Gr: TATGroups;
-  Pages: TATPages;
+  TempGrp: TATGroups;
+  TempPages: TATPages;
   sSessionFileName, sTabFilename, sTabFilename2,
   sRootPath, sJsonPath, sTabKind, sConsole, sUndo: string;
   nLocalGroup, nGlobalGroup, nTabInGroup: integer;
   nCountFiles, nCountUntitled, iSavingTabIndex: integer;
   nNewFrameCount, nPrevFrameCount: integer;
   bModified, bUntitled: boolean;
-  bSessionUpdated, bFileExisted: boolean;
+  bSessionUpdated, bSessionFileExisted: boolean;
   currFramesEditState: array of TFrameEditState;
   fileWriteTimeBeforeSaving,
   fileWriteTimeAfterSaving: TDateTime;
@@ -295,7 +295,7 @@ begin
   if ExtractFileName(sSessionFileName)=cAppSessionNone then exit;
 
   bSessionUpdated:= false;
-  bFileExisted:= FileExists(sSessionFileName);
+  bSessionFileExisted:= FileExists(sSessionFileName);
   fileWriteTimeBeforeSaving:= Default(TDateTime);
   fileWriteTimeAfterSaving:= Default(TDateTime);
   nCountFiles:= 0;
@@ -344,9 +344,9 @@ begin
 
     for iGroup:= 0 to cAppMaxGroup do
     begin
-      Pages:= TGroupsHelper.GetPagesOfGroupIndex(iGroup);
-      if Pages=nil then Continue;
-      cfg.SetValue(sRootPath+'/tab_index/g'+IntToStr(iGroup), Pages.Tabs.TabIndex);
+      TempPages:= TGroupsHelper.GetPagesOfGroupIndex(iGroup);
+      if TempPages=nil then Continue;
+      cfg.SetValue(sRootPath+'/tab_index/g'+IntToStr(iGroup), TempPages.Tabs.TabIndex);
     end;
     cfg.SetValue(sRootPath+'/tab_index/g_active', GroupsMain.FindPages(GroupsMain.PagesCurrent));
 
@@ -413,7 +413,7 @@ begin
 
       sJsonPath:= sRootPath+'/'+Format('%3.3d', [iSavingTabIndex]);
 
-      GetFrameLocation(Frame, Gr, Pages, nLocalGroup, nGlobalGroup, nTabInGroup);
+      GetFrameLocation(Frame, TempGrp, TempPages, nLocalGroup, nGlobalGroup, nTabInGroup);
       bModified:= Frame.Ed1.Modified or (bUntitled and not Frame.IsEmpty);
 
       if AByTimer then
@@ -436,8 +436,22 @@ begin
       cfg.SetValue(sJsonPath+'/tab_title', Frame.TabCaption);
       cfg.SetValue(sJsonPath+'/tab_title_rsn', ConvertTabCaptionReasonToString(Frame.TabCaptionReason));
       cfg.SetValue(sJsonPath+'/group', nGlobalGroup+1); //support old sessions with 1-based index
+      cfg.SetValue(sJsonPath+'/u_id', Frame.UniqueCounter);
       cfg.SetDeleteValue(sJsonPath+'/pinned', Frame.TabPinned, false);
       cfg.SetDeleteValue(sJsonPath+'/goto', Frame.GotoInput, '');
+
+      if UiOps.HistoryItems[TAppHistoryElement.TabColor] then
+      begin
+        if Frame.TabColor=clNone then
+          cfg.DeleteValue(sJsonPath+'/color')
+        else
+          cfg.SetValue(sJsonPath+'/color', ColorToString(Frame.TabColor));
+
+        if Frame.TabFontColor=clNone then
+          cfg.DeleteValue(sJsonPath+'/color_font')
+        else
+          cfg.SetValue(sJsonPath+'/color_font', ColorToString(Frame.TabFontColor));
+      end;
 
       case Frame.FrameKind of
         TAppFrameKind.Editor:
@@ -486,7 +500,7 @@ begin
           Frame.DoSaveBookmarks(Frame.Ed1, cfg_bookmarks);
 
       //save info about paired-tab to subkey "pair"
-      if sTabFilename2<>'' then
+      if not Frame.EditorsLinked then
       begin
         sJsonPath+= '/pair';
 
@@ -533,7 +547,7 @@ begin
     Result:= true;
   finally
     try
-      if not bFileExisted then
+      if not bSessionFileExisted then
         bSessionUpdated:= true;
 
       if bSessionUpdated then
@@ -557,7 +571,7 @@ begin
       fileWriteTimeAfterSaving:= Default(TDateTime);
   end;
 
-  if UiOps.LogSessions and (bSessionUpdated or not bFileExisted) then
+  if UiOps.LogSessions and (bSessionUpdated or not bSessionFileExisted) then
   begin
     if fileWriteTimeBeforeSaving<>fileWriteTimeAfterSaving then
       sConsole:= Format('Saved session: "%s", %d file(s)', [ExtractFileName(sSessionFileName), nCountFiles])
@@ -589,8 +603,9 @@ var
   cfg: TAppJsonConfig;
   Frame: TEditorFrame;
   Ed: TATSynEdit;
-  Gr: TATGroups;
-  Pages: TATPages;
+  TempGrp: TATGroups;
+  TempPages: TATPages;
+  TempTabs: TATTabs;
   ListSessionKeys: TStringList;
   sSessionFileName, sTabFilename, sTabFilename2, sRootPath,
   sTabTitle, sTabKind, sOpenOptions,
@@ -600,9 +615,8 @@ var
   bAllowOnState, bReusedEmptyFrame: boolean;
   sText: UnicodeString;
   sUndoString, sRedoString: string;
-  bExist, bExist2: boolean;
+  bTabFileExists, bTabFileExists2: boolean;
   sDateSaved, sDateCurrent, sConsole: string;
-  CurTabs: TATTabs;
   nTick: QWord;
   nGroupIndex, nTabInGroup: integer;
   iList, iGroup, iFrame: integer;
@@ -700,15 +714,15 @@ begin
       sTabFilename:= AppExpandHomeDirInFilename(cfg.GetValue(sItemPath+'file', ''));
       sTabFilename2:= AppExpandHomeDirInFilename(cfg.GetValue(sItemPath2+'file', ''));
 
-      bExist:= (sTabFilename<>'') and FileExists(sTabFilename);
-      bExist2:= (sTabFilename2<>'') and FileExists(sTabFilename2);
+      bTabFileExists:= (sTabFilename<>'') and FileExists(sTabFilename);
+      bTabFileExists2:= (sTabFilename2<>'') and FileExists(sTabFilename2);
 
-      if (sTabFilename<>'') and not bExist then
+      if (sTabFilename<>'') and not bTabFileExists then
       begin
         MsgFileFromSessionNotFound(sTabFilename);
       end;
 
-      if (sTabFilename2<>'') and not bExist2 then
+      if (sTabFilename2<>'') and not bTabFileExists2 then
       begin
         MsgFileFromSessionNotFound(sTabFilename2);
       end;
@@ -719,12 +733,13 @@ begin
       sRedoString:= cfg.GetValue(sItemPath+'redo', '');
       sTabKind:= cfg.GetValue(sItemPath+'kind', '');
       bModified:= cfg.GetValue(sItemPath+'modified', false);
+      bModified2:= cfg.GetValue(sItemPath2+'modified', false);
 
       //support old sessions with 1-based group index
       nGroupIndex:= cfg.GetValue(sItemPath+'group', 1)-1;
 
       //check, if text saved in session, but file was changed outside
-      if bModified and bExist then
+      if bModified and bTabFileExists then
       begin
         sDateSaved:= cfg.GetValue(sItemPath+'file_date', '');
         sDateCurrent:= ConvertFileDateToNiceString(sTabFilename);
@@ -737,7 +752,7 @@ begin
            bModified:= false;
       end;
 
-      Gr:= GroupsMain;
+      TempGrp:= GroupsMain;
       if (nGroupIndex<0) then
         nGroupIndex:= 0;
       if (nGroupIndex>High(TATGroupsNums)) then
@@ -746,7 +761,7 @@ begin
         case nGroupIndex of
           High(TATGroupsNums)+1:
             begin
-              Gr:= GroupsFloating1;
+              TempGrp:= GroupsFloating1;
               if AppFormShowCompleted then
                 ShowFloatingForm1:= true
               else
@@ -754,7 +769,7 @@ begin
             end;
           High(TATGroupsNums)+2:
             begin
-              Gr:= GroupsFloating2;
+              TempGrp:= GroupsFloating2;
               if AppFormShowCompleted then
                 ShowFloatingForm2:= true
               else
@@ -762,7 +777,7 @@ begin
             end
           else
             begin
-              Gr:= GroupsFloating3;
+              TempGrp:= GroupsFloating3;
               if AppFormShowCompleted then
                 ShowFloatingForm3:= true
               else
@@ -771,10 +786,11 @@ begin
         end;
         nGroupIndex:= 0;
       end;
-      Pages:= Gr.Pages[nGroupIndex];
+      TempPages:= TempGrp.Pages[nGroupIndex];
 
       if SBeginsWith(sTabKind, 'bin') then
       begin
+        //last char is digit, which is viewer mode
         case StrToIntDef(sTabKind[Length(sTabKind)], -1) of
           0: sOpenOptions:= '/view-text';
           1: sOpenOptions:= '/view-binary';
@@ -798,75 +814,94 @@ begin
           Frame:= Frames[0];
         end
         else
-          Frame:= DoFileOpen('', '', Pages, SOptionPassive+SOptionNoHistory);
+          Frame:= DoFileOpen(
+                    '',
+                    IfThen(bTabFileExists2 and not bModified2, sTabFilename2, ''),
+                    TempPages,
+                    SOptionPassive+SOptionNoHistory
+                    );
         if sTabFilename<>'' then
-        begin
           Frame.SetFileName(Frame.Ed1, sTabFilename);
-          Frame.TabCaption:= ExtractFileName(sTabFilename);
+        if sTabFilename2<>'' then
+        begin
+          Frame.EditorsLinked:= false;
+          Frame.Splitted:= true;
+          Frame.SetFileName(Frame.Ed2, sTabFilename2);
         end;
+        if (sTabFilename<>'') or (sTabFilename2<>'') then
+          Frame.UpdateCaptionFromFilename;
+
         if sText<>'' then
         begin
-          Frame.InitProgressForm(Frame.Editor, 'session "'+ExtractFileName(sSessionFileName)+'"', Length(sText));
-          Frame.Editor.Text:= sText;
-          Frame.Editor.Strings.Endings:= nLineEnds;
-          Frame.HideProgressForm(Frame.Editor);
+          Frame.InitProgressForm(Frame.Ed1, 'session "'+ExtractFileName(sSessionFileName)+'"', Length(sText));
+          Frame.Ed1.Text:= sText;
+          Frame.Ed1.Strings.Endings:= nLineEnds;
+          Frame.HideProgressForm(Frame.Ed1);
         end;
         if sUndoString<>'' then
-          Frame.Editor.UndoAsString:= sUndoString;
+          Frame.Ed1.UndoAsString:= sUndoString;
         if sRedoString<>'' then
-          Frame.Editor.RedoAsString:= sRedoString;
-        Frame.Editor.Modified:= bModified;
-        //UpdateModified call must be before Frame.TabCaption:=..., it overwrites TabCaption
-        Frame.UpdateModified(Frame.Editor);
-
-        sTabTitle:= cfg.GetValue(sItemPath+'tab_title', '');
-        if sTabTitle<>'' then
-          Frame.TabCaption:= sTabTitle;
-
-        if ConvertStringToTabCaptionReason(
-          cfg.GetValue(sItemPath+'tab_title_rsn', ''),
-          nCaptionReason) then
-          Frame.TabCaptionReason:= nCaptionReason;
+          Frame.Ed1.RedoAsString:= sRedoString;
+        Frame.Ed1.Modified:= bModified;
 
         Frame.NotifEnabled:= sTabFilename<>'';
-      end
+
+        //file was maybe deleted: check it and show notif-panel; fixes issue #6377
+        if not bTabFileExists then
+          Frame.NotifyAboutChange(Frame.Ed1);
+      end //if bModified
       else
       //unmodified+named tabs must load file again
       begin
         Inc(nCountFiles);
-        if not bExist then
+        if not bTabFileExists then
           Inc(nCountFilesDeleted);
 
-        Frame:= DoFileOpen(sTabFilename, sTabFilename2, Pages, sOpenOptions+SOptionPassive+SOptionNoHistory);
+        Frame:= DoFileOpen(sTabFilename, sTabFilename2, TempPages, sOpenOptions+SOptionPassive+SOptionNoHistory);
 
         //show "externally deleted" top panel if file not exists
         if Assigned(Frame) then
         begin
-          if (sTabFilename<>'') and not bExist then
+          if (sTabFilename<>'') and not bTabFileExists then
             Frame.NotifyAboutChange(Frame.Ed1);
-          if (sTabFilename2<>'') and not bExist2 then
+          if (sTabFilename2<>'') and not bTabFileExists2 then
             Frame.NotifyAboutChange(Frame.Ed2);
         end;
-      end;
+      end; //if not bModified
 
       if Assigned(Frame) then
       begin
         Frame.IsLoadedFromSession:= true;
         Frame.DoLoadHistoryEx(Frame.Ed1, cfg, sItemPath, true);
 
-        if sTabFilename2<>'' then
+        //UpdateModified call must be before Frame.TabCaption:=..., it overwrites TabCaption
+        if Frame.Ed1.Modified then
+          Frame.UpdateModified(Frame.Ed1);
+
+        sTabTitle:= cfg.GetValue(sItemPath+'tab_title', '');
+        if sTabTitle<>'' then
+          Frame.TabCaption:= sTabTitle;
+
+        sTabTitle:= cfg.GetValue(sItemPath+'tab_title_rsn', '');
+        if (sTabTitle<>'') and ConvertStringToTabCaptionReason(sTabTitle, nCaptionReason) then
+          Frame.TabCaptionReason:= nCaptionReason;
+
+        if (sTabFilename2<>'') or bModified2 then
         begin
+          Frame.EditorsLinked:= false;
           sText:= cfg.GetValue(sItemPath2+'text', '');
           nLineEnds:= ConvertIntegerToLineEndings(cfg.GetValue(sItemPath2+'ends', -1));
           sUndoString:= cfg.GetValue(sItemPath2+'undo', '');
           sRedoString:= cfg.GetValue(sItemPath2+'redo', '');
-          bModified2:= cfg.GetValue(sItemPath2+'modified', false);
+          {
           if sText='' then
             bModified2:= false;
+            }
 
           if bModified2 then
           begin
-            Inc(nCountFilesModified);
+            if sTabFilename2<>'' then
+              Inc(nCountFilesModified);
             if sText<>'' then
             begin
               Frame.Ed2.Text:= sText;
@@ -882,7 +917,7 @@ begin
           else
           begin
             Inc(nCountFiles);
-            if not bExist2 then
+            if not bTabFileExists2 then
               Inc(nCountFilesDeleted);
           end;
 
@@ -891,6 +926,9 @@ begin
 
         Frame.GotoInput:= cfg.GetValue(sItemPath+'goto', '');
         Frame.TabPinned:= cfg.GetValue(sItemPath+'pinned', false);
+        Frame.TabColor:= StringToColorDef(cfg.GetValue(sItemPath+'color', ''), clNone);
+        Frame.TabFontColor:= StringToColorDef(cfg.GetValue(sItemPath+'color_font', ''), clNone);
+        Frame.UniqueCounter:= cfg.GetValue(sItemPath+'u_id', Frame.UniqueCounter);
 
         //event on_open was blocked in DoFileOpen, call it here
         //(plugin "Tab Icons" needs it)
@@ -899,44 +937,44 @@ begin
 
         if sTabFilename2<>'' then
           DoPyEvent_Open(Frame.Ed2);
-      end;
+      end; //if Assigned(Frame)
     end;
 
     //restore tab-index in all groups
     for iGroup:= 0 to High(TATGroupsNums)+3 do
     begin
       if iGroup<=High(TATGroupsNums) then
-        CurTabs:= GroupsMain.Pages[iGroup].Tabs
+        TempTabs:= GroupsMain.Pages[iGroup].Tabs
       else
       begin
         case iGroup of
           High(TATGroupsNums)+1:
-            Gr:= GroupsFloating1;
+            TempGrp:= GroupsFloating1;
           High(TATGroupsNums)+2:
-            Gr:= GroupsFloating2;
+            TempGrp:= GroupsFloating2;
           else
-            Gr:= GroupsFloating3;
+            TempGrp:= GroupsFloating3;
         end;
-        if Gr=nil then Continue;
-        CurTabs:= Gr.Pages1.Tabs;
+        if TempGrp=nil then Continue;
+        TempTabs:= TempGrp.Pages1.Tabs;
       end;
       nTabInGroup:= cfg.GetValue(sRootPath+'/tab_index/g'+IntToStr(iGroup), -1);
-      nTabInGroup:= Max(0, Min(nTabInGroup, CurTabs.TabCount-1));
+      nTabInGroup:= Max(0, Min(nTabInGroup, TempTabs.TabCount-1));
       //don't check that index is different, force set index; this fixes e.g. bug #3892
-      if CurTabs.TabCount>0 then
-        CurTabs.TabIndex:= nTabInGroup;
+      if TempTabs.TabCount>0 then
+        TempTabs.TabIndex:= nTabInGroup;
     end;
 
     //restore group-index
     nGroupIndex:= cfg.GetValue(sRootPath+'/tab_index/g_active', Low(TATGroupsNums));
     if (nGroupIndex>=Low(TATGroupsNums)) and (nGroupIndex<=High(TATGroupsNums)) then
     begin
-      Pages:= GroupsMain.Pages[nGroupIndex];
-      if Pages.Tabs.TabCount>0 then
-        if GroupsMain.PagesCurrent<>Pages then
+      TempPages:= GroupsMain.Pages[nGroupIndex];
+      if TempPages.Tabs.TabCount>0 then
+        if GroupsMain.PagesCurrent<>TempPages then
         begin
-          GroupsMain.PagesCurrent:= Pages;
-          Pages.Tabs.TabIndex:= Pages.Tabs.TabIndex;
+          GroupsMain.PagesCurrent:= TempPages;
+          TempPages.Tabs.TabIndex:= TempPages.Tabs.TabIndex;
         end;
     end;
 
@@ -1964,29 +2002,15 @@ procedure TfmMain.DoOps_LoadOptionsLexerSpecific(F: TEditorFrame; Ed: TATSynEdit
   procedure ApplyOps(const Ops: TEditorOps);
   var
     EdIndex: integer;
-    PrevTabSize: integer;
-    PrevTabSizeChanged: boolean;
-    PrevTabSpaces: boolean;
-    PrevTabSpacesChanged: boolean;
     TempOps: TEditorTempOptions;
   begin
     EdIndex:= F.EditorObjToIndex(Ed);
     if EdIndex<0 then exit;
 
-    PrevTabSize:= Ed.OptTabSize;
-    PrevTabSizeChanged:= F.TabSizeChanged;
-    PrevTabSpaces:= Ed.OptTabSpaces;
-    PrevTabSpacesChanged:= F.TabSpacesChanged;
-
     EditorSaveTempOptions(Ed, TempOps);
     TempOps.FontSize:= Ops.OpFontSize; //support overriding "font_size" in lexer-specific config
     DoApplyFrameOps(F, Ops, true);
     EditorRestoreTempOptions(Ed, TempOps, F.InitialOptions[EdIndex]);
-
-    if PrevTabSizeChanged then
-      Ed.OptTabSize:= PrevTabSize;
-    if PrevTabSpacesChanged then
-      Ed.OptTabSpaces:= PrevTabSpaces;
   end;
   //
 var

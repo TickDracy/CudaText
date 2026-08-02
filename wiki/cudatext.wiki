@@ -1414,9 +1414,10 @@ Session file contains data:
 * List of named documents (file names), and unnamed documents
 * For each document:
 ** kind of the document: text editor / picture viewer / text viewer (and viewer mode: text/binary/hex/unicode)
-** text of the document, if document is modified
+** 'document is modified' flag
 ** undo/redo data, if document is modified
 ** read-only state
+** kind of line-endings: LF/CRLF/CR
 ** first caret position
 ** encoding
 ** word-wrap mode
@@ -1429,21 +1430,22 @@ Session file contains data:
 ** gutter columns: "line numbers" visible state
 ** gutter columns: "line states" visible state
 ** gutter columns: "folding" visible state + list of currently folded blocks
-** scale factor
-** list of folded ranges (if lexer supports folding)
-** color of ui-tab (if not default)
-** tab title (if not default)
-** modified state
+** scale factor, ie zoom
+** color of ui-tab, background and font
+** title of ui-tab
+** reason of ui-tab's title: unsaved / unsaved special / from filename / from plugin
 ** code-tree filter string and history of last filters
 ** splitting to 2 editors: on/off, vertical/horizontal, percents of size
 ** column of vertical "margin" line, if it's not default
 ** "pinned" state of the ui-tab
+** "unique" 64-bit integer id of the ui-tab, which is inited on ui-tab creation
 * For each modified document: date of modification, full document text
 * Last input of "Go to" dialog for each ui-tab
 * Layout:
 ** Layout/sizes of side panel and bottom panel
 ** Grouping mode and sizes of all groups
 ** Index of active group (if more than 1 group is shown) and active ui-tab in each group
+** If ui-tab is splitted for 2 independent files (e.g. via command "Options > Settings - default/user"): properties of the paired editor-control
 
 Plugin "Session Manager" is present in Addons Manager, it gives commands to control sessions:
 open session file, save session, show list of recent sessions, etc.
@@ -3177,6 +3179,24 @@ Type the following command into your console window and hit Enter:
  regsvr32 "<Path-to-CudaText-folder>\cudatext_shell64.dll"
 
 You should see a confirmation message that indicates a successful registration of the DLL. Check the Explorer context menu to see if there is a CudaText menu item that has an icon. Right click for example a *.txt file and select "Open with CudaText" from the context menu.
+
+=Windows: Crash and hang backup=
+
+CudaText automatically creates a backup copy of the file you are currently editing if the program crashes or hangs on Windows. The backup contains every keystroke up to the moment of the crash — nothing is lost.
+
+'''Where backups are saved:'''
+
+* For files that have a name on disk: next to the original file, with a timestamp appended. Example: {{Code|myfile.txt.20260719_130455.bak}}.
+* For untitled tabs (File → New): inside the {{Code|crash_backup}} subfolder of CudaText's settings directory, named like {{Code|untitled3_tab_recovered_20260719_130455.bak}}. If the settings folder is not writable, the backup falls back to the system temp folder.
+
+'''When a backup is created:'''
+
+* On any unhandled exception (access violation, stack overflow, illegal instruction, divide by zero, etc.) on any thread — main thread, parser thread, or plugin thread.
+* When the main thread hangs for more than 7 seconds.
+
+'''Hang recovery:''' If CudaText recovers from a hang on its own (the main thread unblocks), the hang backup is automatically deleted because you didn't actually lose any data. Only crashes leave a permanent backup.
+
+'''Diagnostic log:''' A log of crash/hang events is written to {{Code|crash_backup\cudatext_crash_backup.log}} in the settings directory. Each line is timestamped. This is useful for diagnosing recurring crashes — open it after a crash to see the exception code and the backup file path.
 
 [[Category:CudaText| ]]
 [[Category:Applications written in Free Pascal]]

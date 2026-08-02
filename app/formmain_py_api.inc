@@ -1985,7 +1985,8 @@ begin
       StrOps:= string(PtrOps);
 
       if F=nil then
-        exit(ReturnNone);
+        Str:= ''
+      else
       if (F.FrameKind=TAppFrameKind.Editor) or (Pos('*', StrOps)>0) then
         Str:= F.GetFileName(Ed)
       else
@@ -3613,9 +3614,9 @@ begin
         PROP_TAB_ID:
           begin
             if Assigned(Frame) then
-              Result:= PyLong_FromLong(Frame.TabId)
+              Result:= PyLong_FromLongLong(Frame.UniqueCounter)
             else
-              Result:= ReturnNone;
+              Result:= PyLong_FromLong(0);
           end;
 
         PROP_TAB_UI_SHOW:
@@ -4294,16 +4295,14 @@ begin
         PROP_TAB_SPACES:
           begin
             Ed.OptTabSpaces:= ValueBool;
-            if Assigned(Frame) then
-              Frame.TabSpacesChanged:= true;
+            Include(Ed.ModifiedOptions, TATEditorModifiedOption.TabSpaces);
           end;
 
         PROP_TAB_SIZE:
           begin
             Ed.OptTabSize:= ValueInt;
-            if Assigned(Frame) then
-              Frame.TabSizeChanged:= true;
-          end;
+            Include(Ed.ModifiedOptions, TATEditorModifiedOption.TabSize);
+         end;
 
         PROP_TAB_SMART:
           begin
@@ -4440,11 +4439,16 @@ begin
                 if Frame.TabCaptionReason=TAppTabCaptionReason.FromPlugin then
                 begin
                   if Frame.FileName<>'' then
-                    Frame.TabCaptionReason:= TAppTabCaptionReason.FromFilename
+                  begin
+                    Frame.TabCaptionReason:= TAppTabCaptionReason.FromFilename;
+                    Frame.UpdateCaptionFromFilename;
+                  end
                   else
+                  begin
+                    Frame.TabCaption:= fmMain.GetUntitledNumberedCaption;
                     Frame.TabCaptionReason:= TAppTabCaptionReason.Unsaved;
+                  end;
                 end;
-                Frame.UpdateCaptionFromFilename;
               end;
             end;
           end;
