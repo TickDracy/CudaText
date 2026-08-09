@@ -334,6 +334,7 @@ Actions work with props of Find/Replace dialog, and props of low-level search en
 
 ====app_proc - System====
 
+* PROC_IDLE: Performs application's message-processing. If param "text" is True, also waits for new UI event.
 * PROC_ENUM_FONTS: Returns list of font names, currently installed in OS. There are no font names common in all OS'es.
 * PROC_ENUM_ENCODINGS: Returns list of supported encoding names.
 * PROC_GET_SYSTEM_PPI: Returns int value of screen pixels-per-inch. Usual value is 96. When OS UI is scaled, it's bigger, e.g. for scale 150% it is round(96*1.5).
@@ -720,6 +721,8 @@ For line "line 10 column 20: text message here" the following regex and indexes 
 * zero-base flag "0" (off).
 
 ===app_idle===
+
+(deprecated, use app_proc(PROC_IDLE, wait_bool_flag) instead)
 
  app_idle(wait=False)
 
@@ -2169,7 +2172,8 @@ Possible values of "id_action":
 ** If it is form handle from dlg_proc, object will be deleted after deletion of this form.
 ** If it is 0, main application form is used as owner, and object will be persistent.
 
-* IMAGE_GET_SIZE: Returns current image size as 2-tuple (width, height).
+* IMAGE_GET_SIZE: Returns original picture size as 2-tuple (width, height).
+* IMAGE_GET_SIZE_UI: Returns current GUI-control size as 2-tuple (width, height). For example, if GUI control is scaled to 50%, IMAGE_GET_SIZE_UI returns half of the IMAGE_GET_SIZE.
 * IMAGE_LOAD: Reads picture file into image object. Param "value" must be full file path. Supported formats: PNG, JPEG (extensions: jpg/jpeg/jfif), BMP, GIF, ICO, WEBP.
 * IMAGE_PAINT: Paints image object on given canvas, at given coords. Param "value" must be tuple (canvas_id, x, y). Value canvas_id can be 0, for testing paintbox in CudaText.
 * IMAGE_PAINT_SIZED: Paints image object on given canvas, resized to given rectangle. Param "value" must be tuple (canvas_id, x1, y1, x2, y2).
@@ -2633,7 +2637,6 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"). Possi
 * PROP_MARKED_RANGE: 2-tuple with line indexes of "marked range"; (-1, -1) if range not set.
 * PROP_VISIBLE_LINES: int: max count of lines that fit to window (doesn't consider word wrap).
 * PROP_VISIBLE_COLUMNS: int: max count of columns that fit to window.
-* PROP_PICTURE: properties of picture file as 3-tuple: (picture_filename, size_x, size_y), or None if not picture loaded in tab. For picture ed.get_filename() returns "?".
 * PROP_MINIMAP: bool: minimap is visible.
 * PROP_MINIMAP_CHAR_WIDTH: int: minimap width, in average chars.
 * PROP_MINIMAP_SCALE: int: minimap custom scale, in percents; if value<=100: auto-detect.
@@ -2711,6 +2714,8 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"). Possi
 * PROP_HANDLE_PRIMARY: int: handle of editor object, which is primary editor in ui-tab (primary editor is always visible). It's None for editor objects created from <code>dlg_proc()</code>.
 * PROP_HANDLE_SECONDARY: int: handle of editor object, which is secondary editor in ui-tab (secondary editor is visible only when ui-tab is splitted). It's None for editor objects created from <code>dlg_proc()</code>.
 * PROP_HANDLE_PARENT: int: handle of parent of editor object, or 0 if no such parent. This is handle of dialog containing the editor, it can be passed to <code>dlg_proc()</code>. This handle is needed to dock custom dialogs into the editor, again via <code>dlg_proc()</code>.
+* PROP_HANDLE_IMAGE: int: for ui-tab containing picture viewer: handle if the image-object, this handle is compatible with <code>image_proc()</code>. Otherwise, it is None.
+
 * PROP_COORDS: 4-tuple of int: rectangle of entire editor area, relative to screen.
 * PROP_RECT_CLIENT: 4-tuple of int: rectangle of entire editor area, relative to editor.
 * PROP_RECT_TEXT: 4-tuple of int: rectangle of "main text" editor area (excluding gutter/minimap/micromap/ruler), relative to editor.
@@ -5383,8 +5388,13 @@ It provides:
 1.0.483 (app 1.236.0)
 * add: on_state: APPSTATE_SESSION_SET
 * add: dlg_proc: controls "memo"/"edit"/"edit_pwd"/"spinedit"/"combo" support new event "on_key_press"
-* add: Editor.get_prop: PROP_TAB_ID is now more unique, and it is persistent (it is saved/restored to session)
 * add: file_open: function supports empty filename1 and non-empty filename2
-* change: file_open: for Editor not in ui-tab, returns now empty str (before it was None)
+* add: Editor.get_prop: PROP_TAB_ID is now much more unique, and it is persistent (it is saved/restored to session)
+* add: Editor.get_prop: PROP_HANDLE_IMAGE
+* add: image_proc: IMAGE_GET_SIZE_UI
+* add: app_proc: PROC_IDLE
+* change: Editor.get_filename: for Editor not in ui-tab, returns now empty str (before it was None)
+* delete: PROP_PICTURE (none public plugins did use it; use PROP_HANDLE_IMAGE instead)
+* deprecate: app_idle()
 
 [[Category:CudaText]]

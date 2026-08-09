@@ -546,6 +546,11 @@ end;
 
 
 function api_app_idle(Self, Args: PPyObject): PPyObject; cdecl;
+{
+plan:
+2026.09 or .10 - add here Console message "ERROR: app_idle is deprecated, avoid it"
+2026.12 - update all plugins and delete app_idle
+}
 var
   Flag: LongBool;
 begin
@@ -3822,15 +3827,12 @@ begin
             Result:= PyUnicodeFromString(Str);
           end;
 
-        PROP_PICTURE:
+        PROP_HANDLE_IMAGE:
           begin
-            if (Frame=nil) or (Frame.FrameKind<>TAppFrameKind.ImageViewer) then
-              Result:= ReturnNone
+            if Assigned(Frame) and Assigned(Frame.ImageBox) then
+              Result:= PyHelper_ObjectHandle(Frame.ImageBox.Image)
             else
-            begin
-              Pnt:= Frame.PictureSizes;
-              Result:= Py_BuildValue('(sii)', PChar(Frame.FileName), Pnt.X, Pnt.Y);
-            end;
+              Result:= ReturnNone;
           end;
 
         PROP_COORDS:
@@ -5358,6 +5360,13 @@ begin
             TKeymapHelperMain.UpdateDynamic(TAppCommandCategory.OpenedFile);
             TKeymapHelperMain.UpdateDynamic(TAppCommandCategory.RecentFile);
             Result:= PyHelper_CommandList;
+          end;
+
+        APP_PROC_IDLE:
+          begin
+            Application.ProcessMessages;
+            Application.Idle(ParamBool);
+            Result:= ReturnNone;
           end;
 
         APP_PROC_GET_COMPILER_INFO:
@@ -7574,7 +7583,7 @@ begin
             Canvas:= PyHelper_CanvasId_to_CanvasObject(Num64);
             if Canvas=nil then
             begin
-              MsgLogConsole('ERROR: imagelist_proc() gets bad canvas handle');
+              MsgLogConsole('ERROR: imagelist_proc(...IMAGELIST_PAINT...) gets bad canvas handle');
               exit(ReturnNone);
             end;
             Sep.GetItemInt(NX, 0);
@@ -7935,7 +7944,7 @@ begin
             Obj:= TObject(PtrInt(IdImgList));
             if Assigned(Obj) and not (Obj is TImageList) then
             begin
-              MsgLogConsole('ERROR: tree_proc() gets bad handle of image-list, of type '+Obj.ClassName);
+              MsgLogConsole('ERROR: tree_proc(...TREE_SET_IMAGELIST...) gets bad handle of image-list, of type '+Obj.ClassName);
               exit(ReturnNone);
             end;
             if bStandardCodeTree then
@@ -8404,7 +8413,7 @@ begin
           Obj2:= TObject(PtrInt(Num64));
           if not (Obj2 is TComponent) then
           begin
-            MsgLogConsole('ERROR: image_proc(IMAGE_CREATE) gets bad owner handle, of type '+Obj2.ClassName);
+            MsgLogConsole('ERROR: image_proc(...IMAGE_CREATE...) gets bad owner handle, of type '+Obj2.ClassName);
             exit(ReturnNone);
           end;
           Obj:= TComponent(Obj2);
@@ -8433,6 +8442,13 @@ begin
               Image.Picture.Height);
           end;
 
+        APP_IMAGE_GET_SIZE_UI:
+          begin
+            Result:= Py_BuildValue('(ii)',
+              Image.Width,
+              Image.Height);
+          end;
+
         APP_IMAGE_LOAD:
           begin
             Gr:= AppLoadPictureFromFile(StrValue);
@@ -8451,7 +8467,7 @@ begin
             Canvas:= PyHelper_CanvasId_to_CanvasObject(Num64);
             if Canvas=nil then
             begin
-              MsgLogConsole('ERROR: image_proc() gets bad canvas handle');
+              MsgLogConsole('ERROR: image_proc(...IMAGE_PAINT...) gets bad canvas handle');
               exit(ReturnNone);
             end;
             Sep.GetItemInt(NX, 0);
@@ -8467,7 +8483,7 @@ begin
             Canvas:= PyHelper_CanvasId_to_CanvasObject(Num64);
             if Canvas=nil then
             begin
-              MsgLogConsole('ERROR: image_proc() gets bad canvas handle');
+              MsgLogConsole('ERROR: image_proc(...IMAGE_PAINT_SIZED...) gets bad canvas handle');
               exit(ReturnNone);
             end;
             Sep.GetItemInt(NX, 0);
@@ -10163,7 +10179,7 @@ begin
               Form.ShowInTaskBar:= Form.ShowInTaskbar_Pending; //after xxShow, for #4456
             end
             else
-              MsgLogConsole('ERROR: DLG_SHOW_MODAL was called for docked form');
+              MsgLogConsole('ERROR: dlg_proc(...DLG_SHOW_MODAL...) was called for docked form');
             Result:= ReturnNone;
           end;
 
@@ -10297,7 +10313,7 @@ begin
               Obj:= TObject(PtrInt(NIndex));
               if not (Obj is TForm) then
               begin
-                MsgLogConsole('ERROR: dlg_proc(DLG_DOCK) gets bad form handle, of type '+Obj.ClassName);
+                MsgLogConsole('ERROR: dlg_proc(...DLG_DOCK...) gets bad form handle, of type '+Obj.ClassName);
                 exit(ReturnNone);
               end;
               Form.Parent:= TForm(Obj);

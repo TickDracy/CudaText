@@ -27,7 +27,7 @@
       <StringTable CompanyName="Alexey Yu. Torgashin" FileDescription="CudaText" InternalName="CudaText" LegalCopyright="(c) 2015-2026 Alexey Yu. Torgashin" OriginalFilename="cudatext.exe" ProductName="CudaText"/>
     </VersionInfo>
     <MacroValues Count="1">
-      <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+      <Macro1 Name="LCLWidgetType" Value="gtk2"/>
     </MacroValues>
     <BuildModes>
       <Item Name="default" Default="True"/>
@@ -82,11 +82,14 @@
         </CompilerOptions>
       </Item>
       <Item Name="linux x64 gtk2">
+        <MacroValues Count="1">
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
+        </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\linux-x64-gtk2\cudatext"/>
+            <Filename Value="bin\linux-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -129,13 +132,13 @@
       </Item>
       <Item Name="linux x64 gtk3">
         <MacroValues Count="1">
-          <Macro3 Name="LCLWidgetType" Value="gtk3"/>
+          <Macro2 Name="LCLWidgetType" Value="gtk3"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\linux-x64-gtk3\cudatext"/>
+            <Filename Value="bin\linux-amd64-gtk3\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -171,13 +174,13 @@
       </Item>
       <Item Name="linux x64 qt5">
         <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
+          <Macro3 Name="LCLWidgetType" Value="qt5"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\linux-x64-qt5\cudatext"/>
+            <Filename Value="bin\linux-amd64-qt5\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -225,7 +228,7 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\linux-x64-qt6\cudatext"/>
+            <Filename Value="bin\linux-amd64-qt6\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -266,6 +269,9 @@
         </CompilerOptions>
       </Item>
       <Item Name="linux arm gtk2">
+        <MacroValues Count="1">
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
+        </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
@@ -313,7 +319,7 @@
       </Item>
       <Item Name="linux arm qt5">
         <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
+          <Macro3 Name="LCLWidgetType" Value="qt5"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -360,6 +366,9 @@
         </CompilerOptions>
       </Item>
       <Item Name="linux aarch64 gtk2">
+        <MacroValues Count="1">
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
+        </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
@@ -407,7 +416,7 @@
       </Item>
       <Item Name="linux aarch64 qt5">
         <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
+          <Macro3 Name="LCLWidgetType" Value="qt5"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -453,107 +462,12 @@
           </Other>
         </CompilerOptions>
       </Item>
-      <Item Name="linux riscv64 gtk2">
-        <CompilerOptions>
-          <Version Value="11"/>
-          <PathDelim Value="\"/>
-          <Target>
-            <Filename Value="bin\linux-riscv64-gtk2\cudatext"/>
-          </Target>
-          <SearchPaths>
-            <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\comp"/>
-            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
-          </SearchPaths>
-          <Parsing>
-            <SyntaxOptions>
-              <IncludeAssertionCode Value="True"/>
-            </SyntaxOptions>
-          </Parsing>
-          <CodeGeneration>
-            <SmartLinkUnit Value="True"/>
-            <TargetCPU Value="riscv64"/>
-            <TargetOS Value="linux"/>
-            <Optimizations>
-              <OptimizationLevel Value="2"/>
-            </Optimizations>
-          </CodeGeneration>
-          <Linking>
-            <Debugging>
-              <DebugInfoType Value="dsDwarf2Set"/>
-              <UseExternalDbgSyms Value="True"/>
-            </Debugging>
-            <LinkSmart Value="True"/>
-            <Options>
-              <Win32>
-                <GraphicApplication Value="True"/>
-              </Win32>
-            </Options>
-          </Linking>
-          <Other>
-            <CustomOptions Value="-dcomplete_at_scroll
--dDisableLCLTIFF
--dDisableLCLPNM
--dDisableAsianCodePages
--dGTK2_IME_CODE"/>
-          </Other>
-        </CompilerOptions>
-      </Item>
-      <Item Name="linux riscv64 qt5">
-        <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
-        </MacroValues>
-        <CompilerOptions>
-          <Version Value="11"/>
-          <PathDelim Value="\"/>
-          <Target>
-            <Filename Value="bin\linux-riscv64-qt5\cudatext"/>
-          </Target>
-          <SearchPaths>
-            <IncludeFiles Value="$(ProjOutDir)"/>
-            <OtherUnitFiles Value="..\comp"/>
-            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
-          </SearchPaths>
-          <Parsing>
-            <SyntaxOptions>
-              <IncludeAssertionCode Value="True"/>
-            </SyntaxOptions>
-          </Parsing>
-          <CodeGeneration>
-            <SmartLinkUnit Value="True"/>
-            <TargetCPU Value="riscv64"/>
-            <TargetOS Value="linux"/>
-            <Optimizations>
-              <OptimizationLevel Value="2"/>
-            </Optimizations>
-          </CodeGeneration>
-          <Linking>
-            <Debugging>
-              <DebugInfoType Value="dsDwarf2Set"/>
-              <UseExternalDbgSyms Value="True"/>
-            </Debugging>
-            <LinkSmart Value="True"/>
-            <Options>
-              <Win32>
-                <GraphicApplication Value="True"/>
-              </Win32>
-            </Options>
-          </Linking>
-          <Other>
-            <CustomOptions Value="-dcomplete_at_scroll
--dDisableLCLTIFF
--dDisableLCLPNM
--dDisableAsianCodePages
--dGTK2_IME_CODE"/>
-          </Other>
-        </CompilerOptions>
-      </Item>
       <Item Name="windows x64">
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\win64\cudatext.exe" ApplyConventions="False"/>
+            <Filename Value="bin\windows-amd64\cudatext.exe" ApplyConventions="False"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -598,7 +512,7 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\win32\cudatext.exe" ApplyConventions="False"/>
+            <Filename Value="bin\windows-i386\cudatext.exe" ApplyConventions="False"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -643,7 +557,7 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\win_arm64\cudatext.exe"/>
+            <Filename Value="bin\windows-aarch64\cudatext.exe"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -682,7 +596,7 @@
       </Item>
       <Item Name="macos x64">
         <MacroValues Count="1">
-          <Macro1 Name="LCLWidgetType" Value="cocoa"/>
+          <Macro5 Name="LCLWidgetType" Value="cocoa"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -730,7 +644,7 @@
       </Item>
       <Item Name="macos aarch64">
         <MacroValues Count="1">
-          <Macro1 Name="LCLWidgetType" Value="cocoa"/>
+          <Macro5 Name="LCLWidgetType" Value="cocoa"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -775,7 +689,7 @@
       </Item>
       <Item Name="freebsd x32">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -823,13 +737,13 @@
       </Item>
       <Item Name="freebsd x64">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\freebsd-x64-gtk2\cudatext"/>
+            <Filename Value="bin\freebsd-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -871,13 +785,13 @@
       </Item>
       <Item Name="openbsd x64">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\openbsd-x64-gtk2\cudatext"/>
+            <Filename Value="bin\openbsd-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -919,7 +833,7 @@
       </Item>
       <Item Name="openbsd x32">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -967,13 +881,13 @@
       </Item>
       <Item Name="netbsd x64">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\netbsd-x64-gtk2\cudatext"/>
+            <Filename Value="bin\netbsd-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -1015,7 +929,7 @@
       </Item>
       <Item Name="netbsd x32">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -1063,13 +977,13 @@
       </Item>
       <Item Name="dragonfly x64">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\dragonflybsd-x64-gtk2\cudatext"/>
+            <Filename Value="bin\dragonflybsd-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -1111,13 +1025,13 @@
       </Item>
       <Item Name="solaris x64">
         <MacroValues Count="1">
-          <Macro5 Name="LCLWidgetType" Value="gtk2"/>
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\solaris-x64-gtk2\cudatext"/>
+            <Filename Value="bin\solaris-amd64-gtk2\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -1159,7 +1073,7 @@
       </Item>
       <Item Name="haiku x32 qt5">
         <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
+          <Macro3 Name="LCLWidgetType" Value="qt5"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
@@ -1201,13 +1115,13 @@
       </Item>
       <Item Name="haiku x64 qt5">
         <MacroValues Count="1">
-          <Macro2 Name="LCLWidgetType" Value="qt5"/>
+          <Macro3 Name="LCLWidgetType" Value="qt5"/>
         </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\haiku-x64-qt5\cudatext"/>
+            <Filename Value="bin\haiku-amd64-qt5\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -1241,12 +1155,15 @@
           </Other>
         </CompilerOptions>
       </Item>
-      <Item Name="linux x64 debug">
+      <Item Name="linux x64 gtk2 debug">
+        <MacroValues Count="1">
+          <Macro1 Name="LCLWidgetType" Value="gtk2"/>
+        </MacroValues>
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="bin\linux-x64-debug\cudatext"/>
+            <Filename Value="bin\linux-amd64-debug\cudatext"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -1386,11 +1303,11 @@
         </CompilerOptions>
       </Item>
       <SharedMatrixOptions Count="5">
-        <Item1 ID="308953563203" Modes="macos x64,macos aarch64" Type="IDEMacro" MacroName="LCLWidgetType" Value="cocoa"/>
-        <Item2 ID="619430612971" Modes="linux x64 qt5,haiku x32 qt5,haiku x64 qt5,linux aarch64 qt5,linux arm qt5,linux riscv64 qt5" Type="IDEMacro" MacroName="LCLWidgetType" Value="qt5"/>
-        <Item3 ID="028184365614" Modes="linux x64 gtk3" Type="IDEMacro" MacroName="LCLWidgetType" Value="gtk3"/>
+        <Item1 ID="352064942102" Modes="default,freebsd x32,freebsd x64,openbsd x64,openbsd x32,netbsd x64,netbsd x32,dragonfly x64,solaris x64,linux x64 gtk2,linux arm gtk2,linux aarch64 gtk2,linux x64 gtk2 debug" Type="IDEMacro" MacroName="LCLWidgetType" Value="gtk2"/>
+        <Item2 ID="028184365614" Modes="linux x64 gtk3" Type="IDEMacro" MacroName="LCLWidgetType" Value="gtk3"/>
+        <Item3 ID="619430612971" Modes="linux x64 qt5,haiku x32 qt5,haiku x64 qt5,linux aarch64 qt5,linux arm qt5" Type="IDEMacro" MacroName="LCLWidgetType" Value="qt5"/>
         <Item4 ID="128333415096" Modes="linux x64 qt6" Type="IDEMacro" MacroName="LCLWidgetType" Value="qt6"/>
-        <Item5 ID="352064942102" Modes="default,freebsd x32,freebsd x64,openbsd x64,openbsd x32,netbsd x64,netbsd x32,dragonfly x64,solaris x64" Type="IDEMacro" MacroName="LCLWidgetType" Value="gtk2"/>
+        <Item5 ID="308953563203" Modes="macos x64,macos aarch64" Type="IDEMacro" MacroName="LCLWidgetType" Value="cocoa"/>
       </SharedMatrixOptions>
     </BuildModes>
     <PublishOptions>

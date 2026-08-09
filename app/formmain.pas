@@ -9297,13 +9297,13 @@ begin
       //MsgLogConsole('Tree-helper data:');
       //MsgLogConsole(Data.ToString);
 
-      //Ed.Fold.BackupPersistentRanges; //if uncommented: fold-states +- are not kept during editing
+      Ed.Fold.BackupPersistentRanges; //if uncommented: fold-states +- are not kept during editing //2026.08: ignore prev comment
       Ed.Fold.BackupFoldedStates;
       Ed.Fold.Clear;
 
       if Assigned(EdPair) then
       begin
-        //EdPair.Fold.BackupPersistentRanges;
+        EdPair.Fold.BackupPersistentRanges;
         EdPair.Fold.BackupFoldedStates;
         EdPair.Fold.Clear;
       end;
@@ -9337,12 +9337,10 @@ begin
 
         if NY2>NY1 then
         begin
-          //must mark fold ranges with tag=cTagPersistentFoldRange, so lexer adapter
-          //won't clear ranges immediately on parsing start.
-          //so user is able to do many editings and fold ranges are kept, until next tree-helper run.
-          Ed.Fold.Add(NX1+1, NY1, NX2+1, NY2, false, STitle, cTagPersistentFoldRange);
+          //before 2026.08, code added ranges with Tag=cTagPersistentFoldRange: that is not needed anymore
+          Ed.Fold.Add(NX1+1, NY1, NX2+1, NY2, false, STitle, 0);
           if Assigned(EdPair) then
-            EdPair.Fold.Add(NX1+1, NY1, NX2+1, NY2, false, STitle, cTagPersistentFoldRange);
+            EdPair.Fold.Add(NX1+1, NY1, NX2+1, NY2, false, STitle, 0);
         end;
 
         if Assigned(ATree) and (GetTickCount64-NStartTick>UiOps.TreeFillMaxTime) then
@@ -9366,7 +9364,7 @@ begin
               Node.Expand(false);
         end;
 
-      //Ed.Fold.RestorePersistentRanges; //if uncommented: fold-states +- are not kept during editing
+      Ed.Fold.RestorePersistentRanges; //if uncommented: fold-states +- are not kept during editing //2026.08: ignore prev comment
       Ed.Fold.ClearLineIndexer(Ed.Strings.Count);
       Ed.Fold.UpdateLineIndexer;
       Ed.Fold.RestoreFoldedStates;
@@ -9374,7 +9372,7 @@ begin
 
       if Assigned(EdPair) then
       begin
-        //EdPair.Fold.RestorePersistentRanges;
+        EdPair.Fold.RestorePersistentRanges;
         EdPair.Fold.ClearLineIndexer(EdPair.Strings.Count);
         EdPair.Fold.UpdateLineIndexer;
         EdPair.Fold.RestoreFoldedStates;
