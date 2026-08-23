@@ -141,7 +141,7 @@ var
   sectionId: TAppInfSection;
   ini_section, dir_inf: string;
   s_itemkind, s_caption, s_module, s_method, s_lexers,
-  s_events, s_keys, s_inmenu, s_icon, s_os: string;
+  s_events, s_keys, s_inmenu, s_icon, s_os, s_api: string;
   CmdItem: TAppCommandInfo;
   EventItem: TAppEventInfo;
   TreeHelper: TAppTreeHelper;
@@ -158,6 +158,13 @@ begin
     if not CheckValue_OS(s_os) then
     begin
       MsgLogConsole(Format('NOTE: Plugin "%s" is not supported on this OS', [s_module]));
+      exit;
+    end;
+
+    s_api:= ini.ReadString('info', 'api', '');
+    if not CheckValue_ReqAPI(s_api) then
+    begin
+      MsgLogConsole(Format('NOTE: Plugin "%s" was ignored, it requires API "%s", but current API is "%s"', [s_module, s_api, cAppApiVersion]));
       exit;
     end;
 
@@ -544,7 +551,7 @@ begin
 
   F:= CurrentFrame;
   if F=nil then exit;
-  Ed:= F.Editor;
+  Ed:= F.EdCurrent;
 
   if not AForceUpdate then
   begin

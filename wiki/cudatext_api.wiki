@@ -722,7 +722,7 @@ For line "line 10 column 20: text message here" the following regex and indexes 
 
 ===app_idle===
 
-(deprecated, use app_proc(PROC_IDLE, wait_bool_flag) instead)
+DEPRECATED. Use <code>app_proc(PROC_IDLE, wait_bool_flag)</code> instead.
 
  app_idle(wait=False)
 
@@ -732,11 +732,15 @@ Performs application's message-processing. If wait=True, also waits for new UI e
 
  emmet(id, text, p1="", p2="")
 
-Performs action with embedded Emmet engine. Possible values of "id":
+Performs action with built-in Emmet engine (written in Pascal).
+
+Possible values of Emmet syntax (for actions which need the syntax): "html", "xml", "xsl", "css", "svg", "sass", "less".
+
+Possible values of "id":
 
 * EMMET_EXPAND: Expand abbreviation. Returns 2-tuple (str_result, bool_multi_caret) or None.
 ** Param "text": Emmet abbreviation.
-** Param "p1": Emmet syntax. Possible values: "html", "xml", "xsl", "css", "svg", "sass", "less".
+** Param "p1": Emmet syntax.
 
 * EMMET_WRAP: Wrap text with abbreviation. Returns str result or None.
 ** Param "text": Emmet abbreviation.
@@ -745,7 +749,7 @@ Performs action with embedded Emmet engine. Possible values of "id":
 
 * EMMET_GET_POS: Find beginning of abbreviation in given string. Returns offset in string (0-based), or None.
 ** Param "text": Text string (can include unneeded text after caret position, can include HTML tags before abbreviation).
-** Param "p1": Caret offset (0-based) to search abbreviation to the left of it.
+** Param "p1": Initial offset in the given text (0-based). Abbreviation search will start from this offset and go to the text begin.
 
 ===msg_box===
 
@@ -975,7 +979,6 @@ Details:
 * Control "toolbar" don't have "items"/"value": to work with it, you must get handle via DLG_CTL_HANDLE, and pass it to <code>toolbar_proc()</code>.
 * Control "statusbar" don't have "items"/"value": to work with it, you must get handle via DLG_CTL_HANDLE, and pass it to <code>statusbar_proc()</code>.
 * Controls "editor"/"editor_edit"/"editor_combo" don't have "items"/"value": to work with it, you must get handle via DLG_CTL_HANDLE, and pass it to <code>Editor()</code> to make editor object.
-* Control "paintbox" is empty area, plugin can paint on it. Get canvas_id via DLG_CTL_HANDLE, and use it in <code>canvas_proc()</code>.
 * Control property "name" is required for "filter_nnnnn" controls: must set name of listbox/listview, and name of its filter - to the same name with prefix "f_" (e.g. listbox name "mylist" with filter name "f_mylist").
 
 ====dlg_custom - Properties of controls====
@@ -1174,7 +1177,6 @@ Additional types, supported only by "dlg_proc":
 * "editor_edit": one-line variant of "editor".
 * "editor_combo": one-line variant of "editor", with drop-down arrow.
 * "listbox_ex": listbox, application-themed, works via <code>listbox_proc()</code>.
-* "paintbox": control which must be painted by plugin via <code>canvas_proc()</code>.
 * "statusbar": statusbar: panel with one horizontal row of cells, works via <code>statusbar_proc()</code>.
 * "toolbar": toolbar: panel which holds buttons with icons, works via <code>toolbar_proc()</code>.
 * "treeview": tree structure with nodes and nested nodes, works via <code>tree_proc()</code>.
@@ -1203,7 +1205,11 @@ Additional types, supported only by "dlg_proc":
 * "keypreview": bool: If on, then key press calls on_key_down before passing key to focused control. Should be True if form needs to handle on_key_down.
 * "p": int: Parent handle. Set this property to int handle of any windowed UI control or form, this control/form will be parent of form.
 * "focused" (only for reading): index of currently focused control.
-* "form_state": current form state, string: "norm" for normal, "min" for minimized, "max" for maximized, "fullscr" for full-screen.
+* "form_state": form maximization/minimization state, string:
+** "norm": normal state.
+** "min": minimized.
+** "max": maximized.
+** "fullscr": full-screen.
 * "topmost": bool: Makes form stay on top of other forms in CudaText.
 * "taskbar": int enum: When form appears on OS taskbar.
 ** 0: Application default behaviour.
@@ -1311,7 +1317,7 @@ General events for all controls:
 * "on_mouse_move": Called when mouse moves over the control. Param "data": like in "on_mouse_down", but "btn" key is always 0. Typical usage of this event is to change the "cursor" property on drag-and-drop. Plugin should keep CPU usage low when user just moves mouse around, so "on_mouse_move" handler should be assigned in "on_mouse_down" and should be removed in "on_mouse_up".
 * "on_mouse_enter": Called when mouse cursor enters control area.
 * "on_mouse_exit": Called when mouse cursor leaves control area.
-* "on_focus_enter": Called when control gets focus. Not supported for controls (they don't have OS window handle): label, button, button_ex, panel, linklabel, colorpanel, bevel, image, progressbar_ex, paintbox, statusbar.
+* "on_focus_enter": Called when control gets focus. Not supported for controls (they don't have OS window handle): label, button, button_ex, panel, linklabel, colorpanel, bevel, image, progressbar_ex, statusbar.
 * "on_focus_exit": Called when control looses focus. Supported for the same controls as "on_focus_enter".
 * "on_menu": Called before showing context menu, after right click or ContextMenu hotkey. Param "data": like in "on_mouse_down". Method can return False to disable default menu (if any).
 
@@ -1411,7 +1417,6 @@ Possible values of "id_action":
 ** type "button_ex": pass handle to <code>button_proc()</code>.
 ** types "editor"/"editor_edit"/"editor_combo": pass handle to <code>Editor()</code> constructor.
 ** type "listbox_ex": pass handle to <code>listbox_proc()</code>.
-** type "paintbox": pass handle to <code>canvas_proc()</code>.
 ** type "statusbar": pass handle to <code>statusbar_proc()</code>.
 ** type "treeview": pass handle to <code>tree_proc()</code>.
 ** type "toolbar": pass handle to <code>toolbar_proc()</code>.
@@ -1841,6 +1846,26 @@ Example adds 3 columns:
   listbox_proc(h_list, LISTBOX_ADD, index=-1, text='first|second|third')
 </syntaxhighlight>
 
+===bitmap_proc===
+
+ bitmap_proc(id_bmp, id_action, param1=0, param2=0)
+
+Performs action on bitmap object.
+
+Possible value of "id_action":
+
+* BITMAP_CREATE: Creates new bitmap (not associated with any GUI control). Param "id_bmp" must be 0 here; param "param1" sets width; param "param2" sets height. Returns int handle of bitmap.
+* BITMAP_FREE: Deletes (frees) the bitmap.
+* BITMAP_GET_CANVAS: Returns int handle of bitmap's canvas, it is compatible with canvas_proc().
+* BITMAP_SET_SIZE: Resizes the bitmap. Param "param1" sets width; param "param2" sets height.
+* BITMAP_GET_SIZE: Returns sizes of bitmap as 2-tuple (width, height).
+
+Notes:
+
+* It is possible to copy one bitmap to another:
+
+ canvas_proc(id_canvas_of_target_bitmap, CANVAS_BITMAP, p1=id_source_bitmap, x=0, y=0)
+
 ===canvas_proc===
 
  canvas_proc(id_canvas, id_action,
@@ -1862,9 +1887,9 @@ Possible values of "id_action":
 * CANVAS_SET_PEN: Sets props of pen. Params used:
 ** "color": pen RGB color.
 ** "size": pen width.
-** "style": one of PEN_STYLE_nnnn.
-** "p1": end caps style, one of PEN_CAPS_nnnn.
-** "p2": line joining style, one of PEN_JOIN_nnnn.
+** "style": one of PEN_STYLE_nnnn values.
+** "p1": end caps style, one of PEN_CAPS_nnnn values.
+** "p2": line joining style, one of PEN_JOIN_nnnn values. It is used when lines of a single polygon (CANVAS_POLYGON) are joined at polygon points.
 
 * CANVAS_SET_BRUSH: Sets props of brush. Params used:
 ** "color": brush color.
@@ -1875,12 +1900,23 @@ Possible values of "id_action":
 * CANVAS_TEXT: Paints text at given coords. Uses font and brush. Params used: "text", "x", "y".
 * CANVAS_LINE: Paints line at given coords. Uses pen. Params used: "x", "y", "x2", "y2".
 * CANVAS_PIXEL: Paints one pixel at given coords. Params used: "x", "y", "color".
-* CANVAS_RECT: Paints rectangle. Uses pen and brush. Params used: "x", "y", "x2", "y2".
-* CANVAS_RECT_FRAME: Paints rectangle. Uses only pen. Params used: "x", "y", "x2", "y2".
-* CANVAS_RECT_FILL: Paints rectangle. Uses only brush. Params used: "x", "y", "x2", "y2".
-* CANVAS_RECT_ROUND: Paints rounded rectangle. Uses pen and brush. Params used: "x", "y", "x2", "y2", "style" - radius of corners.
+* CANVAS_RECT: Paints filled rectangle. Uses pen and brush. Params used: "x", "y", "x2", "y2".
+* CANVAS_RECT_FRAME: Paints outline-only rectangle. Uses only brush (for outline), outline width is always 1 pixel. Params used: "x", "y", "x2", "y2".
+* CANVAS_RECT_FILL: Paints filled rectangle. Uses only brush. Params used: "x", "y", "x2", "y2".
+* CANVAS_RECT_ROUND: Paints rounded filled rectangle. Uses pen and brush. Params used: "x", "y", "x2", "y2", "style" - radius of corners.
 * CANVAS_ELLIPSE: Paints ellipse or circle. Uses pen and brush. Params used: "x", "y", "x2", "y2".
-* CANVAS_POLYGON: Paints polygon from any number of points (>2). Uses pen and brush. Params used: "text" - comma separated list of (x,y) coords. Example: "10,10,200,50,10,100" - 3 points.
+* CANVAS_GRADIENT: Paints rectangle filled by gradient. Ignores pen and brush. Params used: rectangle is in params "x", "y", "x2", "y2"; starting color is in "color"; ending color is in "size"; gradient direction is in "style": 0 - vertical, 1 - horizontal.
+
+* CANVAS_POLYGON: Paints polygon from any number of points (>2). Uses pen and brush. Params used: "text", it must be tuple of int / list of int, like this: (x0, y0, x1, y1, ...). Example: text=(10,10,200,50,10,100) - 3 points to paint a triangle.
+
+* CANVAS_BITMAP: Paints given bitmap. Bitmap's handle must be got from bitmap_proc() and passed to param "p1". Params "x", "y" are the coordinates to paint at.
+* CANVAS_BITMAP_SIZED: Paints given bitmap, stretching it to given rectangle. Bitmap's handle must be in param "p1". Destination rectangle must be in params "x", "y", "x2", "y2".
+* CANVAS_IMAGE: Paints given image. Image's handle must be got from image_proc() or dlg_proc() and passed to param "p1". Params "x", "y" are the coordinates to paint at.
+* CANVAS_IMAGE_SIZED: Paints given image, stretching it to given rectangle. Image's handle must be in param "p1". Destination rectangle must be in params "x", "y", "x2", "y2".
+
+* CANVAS_COPY_RECT: Copies rectangle from one canvas to another. Handle of destination canvas is in param "id_canvas". Handle of source canvas must be in param "p1". Destination rectangle must be in 4 params: "x", "y", "x2", "y2". Source rectangle must be in param "text" as 4-tuple or 4-list of int.
+** Specifying the same handle for source and destination canvas is not recommended: it may not be supported on all platforms, it may give buggy results. If you want to copy from a canvas to ifself, create the temporaty bitmap via bitmap_proc().
+
 * CANVAS_SET_TESTPANEL: Sets height of testing panel at the top. Params used: "size". If it's "too small" then panel hides; for big value, panel height is limited.
 
 === timer_proc ===
@@ -2156,7 +2192,7 @@ Possible values of "id_action":
 * IMAGELIST_ADD: Loads image into imagelist. Param "value" must be full path to PNG/BMP image file. Size of image should be the same as size of imagelist (otherwise image will be loaded cropped or maybe stretched, it depends on IDE). Returns int icon index, or None if cannot load.
 * IMAGELIST_DELETE: Deletes one icon. Param "value" is int icon index (0-based).
 * IMAGELIST_DELETE_ALL: Deletes all icons.
-* IMAGELIST_PAINT: Paints single icon on given canvas, at given coords. Param "value" must be tuple (canvas_id, x, y, icon_index). Value canvas_id can be 0 for testing paintbox in CudaText.
+* IMAGELIST_PAINT: Paints single icon on given canvas, at given coords. Param "value" must be tuple (canvas_id, x, y, icon_index). Value canvas_id can be 0 for testing paint-area in CudaText.
 
 ===image_proc===
 
@@ -2174,9 +2210,10 @@ Possible values of "id_action":
 
 * IMAGE_GET_SIZE: Returns original picture size as 2-tuple (width, height).
 * IMAGE_GET_SIZE_UI: Returns current GUI-control size as 2-tuple (width, height). For example, if GUI control is scaled to 50%, IMAGE_GET_SIZE_UI returns half of the IMAGE_GET_SIZE.
+* IMAGE_GET_BITMAP: Returns int handle of embedded bitmap, it is compatible with bitmap_proc().
 * IMAGE_LOAD: Reads picture file into image object. Param "value" must be full file path. Supported formats: PNG, JPEG (extensions: jpg/jpeg/jfif), BMP, GIF, ICO, WEBP.
-* IMAGE_PAINT: Paints image object on given canvas, at given coords. Param "value" must be tuple (canvas_id, x, y). Value canvas_id can be 0, for testing paintbox in CudaText.
-* IMAGE_PAINT_SIZED: Paints image object on given canvas, resized to given rectangle. Param "value" must be tuple (canvas_id, x1, y1, x2, y2).
+* (DEPRECATED) IMAGE_PAINT: Paints image object on given canvas, at given coords. Param "value" must be tuple (canvas_id, x, y). Value canvas_id can be 0, for testing paintbox in CudaText.
+* (DEPRECATED) IMAGE_PAINT_SIZED: Paints image object on given canvas, resized to given rectangle. Param "value" must be tuple (canvas_id, x1, y1, x2, y2).
 
 ===button_proc===
 
@@ -2529,6 +2566,8 @@ Line-break is counted as 1, even for CR LF endings.
 
 ===Editor.get_filename===
 
+DEPRECATED. Use Editor.get_prop(PROP_FN, '') instead.
+
  get_filename(options="")
 
 Returns filename of the editor.
@@ -2556,6 +2595,7 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"). Possi
 * PROP_GUTTER_EMPTY: bool: show gutter column "empty padding".
 * PROP_GUTTER_EMPTY_WIDTH: int: width of gutter column "empty padding".
 
+* PROP_FN: str: full filename. If editor is in the ui-tab and ui-tab kind is binary viewer / picture viewer, it returns "?". But if param "value" is "*", full filename (of the text editor / binary viewer / picture viewer) is always returned.
 * PROP_NEWLINE: str: kind of line endings. One of values "lf", "crlf", "cr".
 * PROP_WRAP: int: word-wrap mode. One of WRAP_nnn values.
 * PROP_RO: bool: read-only mode.
@@ -2642,6 +2682,9 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"). Possi
 * PROP_MINIMAP_SCALE: int: minimap custom scale, in percents; if value<=100: auto-detect.
 * PROP_MINIMAP_AT_LEFT: bool: minimap is shown on the left side.
 * PROP_MICROMAP: bool: micromap is visible.
+* PROP_MICROMAP_WIDTH: int: micromap's width in percents of average char-width.
+* PROP_MICROMAP_ON_SCROLLBAR: bool: micromap is painted on vertical scrollbar.
+* PROP_MICROMAP_AT_LEFT: bool: micromap is on the left side.
 * PROP_LINK_AT_POS: str: hyperlink string in the document, at given position. Value must be 2-tuple: (pos_x, pos_y).
 * PROP_LINKS_SHOW: bool: enable hyperlinks underlining.
 * PROP_LINKS_REGEX: str: regular expression for hyperlinks.
@@ -2713,7 +2756,17 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"). Possi
 * PROP_HANDLE_SELF: int: handle of editor object, for which get_prop() is called. This handle is unique among all objects in program (it is memory address). Why not just use "ed.h"? Because: 1) For "ed" object its handle "ed.h" is zero - zero handle is virtual handle pointing to the focused editor. 2) For <code>ed_handles()</code> result, handles are also virtual, they are some small integer numbers, not memory addresses. Note: to get editor object from handle, use <code>Editor(handle_value)</code>.
 * PROP_HANDLE_PRIMARY: int: handle of editor object, which is primary editor in ui-tab (primary editor is always visible). It's None for editor objects created from <code>dlg_proc()</code>.
 * PROP_HANDLE_SECONDARY: int: handle of editor object, which is secondary editor in ui-tab (secondary editor is visible only when ui-tab is splitted). It's None for editor objects created from <code>dlg_proc()</code>.
-* PROP_HANDLE_PARENT: int: handle of parent of editor object, or 0 if no such parent. This is handle of dialog containing the editor, it can be passed to <code>dlg_proc()</code>. This handle is needed to dock custom dialogs into the editor, again via <code>dlg_proc()</code>.
+
+* PROP_HANDLE_PARENT: int: handle of parent of editor object, or 0 if no such parent.
+** It is supported only for editor inside ui-tab, otherwise it returns 0.
+** This is the handle of the (borderless) dialog parenting the editor, it can be used to "dock" custom dialogs there, via DLG_DOCK action.
+** This is the handle of dialog which should fully support dlg_proc() so plugin can enumerate controls there. Plugin should see at least 3 controls: control of type "splitter", 2 controls of type "editor" - primary/secondary. If picture viewer is opened, plugin should see additional control of type "imagebox" (API don't support creation of such controls yet). If text/hex viewer is opened, plugin should see additional control of type "viewer" (API don't support creation of such controls yet). Plugin can get/set sizes (properties "w", "h") of splitter / editors / picture viewer / text viewer, and other standard properties.
+
+* PROP_HANDLE_PARENT2: int: handle of parent-of-parent of editor object, or 0 if no such parent.
+** It is supported only for editor inside ui-tab, otherwise it returns 0.
+** This handle can be used to "dock" custom dialogs there, via DLG_DOCK action.
+** This is the handle of the "TFrame" Lazarus control, and it is not compatible with dlg_proc(), so plugin cannot see properties of other controls there.
+
 * PROP_HANDLE_IMAGE: int: for ui-tab containing picture viewer: handle if the image-object, this handle is compatible with <code>image_proc()</code>. Otherwise, it is None.
 
 * PROP_COORDS: 4-tuple of int: rectangle of entire editor area, relative to screen.
@@ -2783,6 +2836,7 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"), tuple
 * PROP_GUTTER_EMPTY: bool: show gutter column "empty padding".
 * PROP_GUTTER_EMPTY_WIDTH: int: width of gutter column "empty padding".
 
+* PROP_FN: str: full filename. If editor is in the ui-tab and ui-tab kind is binary viewer / picture viewer, it cannot set the filename.
 * PROP_WRAP: int: word-wrap mode. One of WRAP_nnn values.
 * PROP_RO: bool: read-only mode.
 * PROP_NEWLINE: str: kind of line endings. One of values "lf", "crlf", "cr".
@@ -2849,6 +2903,9 @@ Param "value" can be: str, number, bool (for bool it can be also "0"/"1"), tuple
 * PROP_MINIMAP_SCALE: int: minimap custom scale, in percents; if value<=100: auto-detect.
 * PROP_MINIMAP_AT_LEFT: bool: minimap is shown on the left side.
 * PROP_MICROMAP: bool: micromap is visible.
+* PROP_MICROMAP_WIDTH: int: micromap's width in percents of average char-width.
+* PROP_MICROMAP_ON_SCROLLBAR: bool: micromap is painted on vertical scrollbar.
+* PROP_MICROMAP_AT_LEFT: bool: micromap is on the left side.
 * PROP_LINKS_SHOW: bool: enable hyperlinks underlining.
 * PROP_LINKS_REGEX: str: regular expression for hyperlinks.
 * PROP_LINKS_CLICKS: int: how mouse clicks activate hyperlinks. 0: disabled, 1: single click, 2: double click.
@@ -2948,7 +3005,10 @@ Many get_prop/set_prop ids correspond to CudaText options. List of corresponding
 * PROP_MARGIN - "margin".
 * PROP_MARGIN_STRING - "margin_string".
 * PROP_MICROMAP - "micromap_show".
+* PROP_MICROMAP_ON_SCROLLBAR - "micromap_on_scrollbar".
 * PROP_MINIMAP - "minimap_show".
+* PROP_MINIMAP_SCALE - "minimap_scale".
+* PROP_MINIMAP_AT_LEFT - "minimap_at_left".
 * PROP_RULER - "ruler_show".
 * PROP_TAB_SIZE - "tab_size".
 * PROP_TAB_SPACES - "tab_spaces".
@@ -2977,6 +3037,12 @@ Controls bookmarks. Possible values of "id":
 ** Param "show": bool: show bookmark in "Go to bookmark" dialog.
 ** Param "tag": int 32-bit: some value attached to bookmark.
 
+* BOOKMARK_APPEND: Adds bookmark very fastly. Params must be like for BOOKMARK_SET. This action does not perform:
+** Search for already existing bookmark for the same line index.
+** Sorting of internal bookmarks list. So plugin must add bookmarks via this action in the sorted order.
+** Firing of "on_state_ed" event about bookmarks change.
+** Rapainting of editor. Plugin should force the repainting via e.g. EDACTION_UPDATE.
+
 * BOOKMARK_CLEAR: Removes bookmark from line, specified by "nline" param.
 * BOOKMARK_CLEAR_ALL: Removes all bookmarks ("nline" ignored).
 * BOOKMARK_DELETE_BY_TAG: Removes all bookmarks, which have the tag, given by "tag" param.
@@ -2992,6 +3058,7 @@ Additional internal list Bookmarks2 exists, which holds list of background bookm
 
 * BOOKMARK2_GET_ALL
 * BOOKMARK2_SET
+* BOOKMARK2_APPEND
 * BOOKMARK2_CLEAR
 * BOOKMARK2_CLEAR_ALL
 * BOOKMARK2_DELETE_BY_TAG
@@ -3173,7 +3240,7 @@ Controls "markers" ("markers" are described in the Wiki, used e.g. in the Snippe
       color_font=COLOR_NONE, color_bg=COLOR_NONE, color_border=COLOR_NONE,
       font_bold=0, font_italic=0, font_strikeout=0,
       border_left=0, border_right=0, border_down=0, border_up=0,
-      show_on_map=False, map_only=0 )
+      show_on_map=-1, map_only=0 )
 
 Controls additional color attributes. Possible values of "id":
 
@@ -3181,17 +3248,20 @@ Controls additional color attributes. Possible values of "id":
 ** "tag": Some int 32-bit value attached to fragment (different plugins should add fragments with different tags).
 ** "x", "y": Text position of fragment start.
 ** "len": Length of fragment in chars.
-*** If len<0, and "show_on_map" is set, it will be multi-line micromap fragment with specified height=-len.
+*** If len<0, and "show_on_map" is set, it will give multi-line micromap fragment with specified height=abs(len).
 ** "color_*": Color values (RGB) for font, background, borders.
 ** "font_*": Font attributes: 0 - off, 1 - on.
 ** "border_*": Border types for edges, int value 0..6: none, solid, dash, solid 2pixel, dotted, rounded, wave.
 ** "show_on_map": How to show this fragment on micromap:
-*** int value>=0: Show on micromap column with given tag. Don't pass value=0, because micromap column with tag=0 is reserved.
+*** int value from 1 to 127: Show on micromap column with given tag.
 *** int value=-1: Don't show on micromap.
 *** int value=-2: Show on micromap as full-width fragment (over full micromap width). Fragment color will be XOR'ed with colors of all micromap columns.
-*** True: Show on micromap column 1.
-*** False: Don't show on micromap.
-** "map_only": int: 0: Show on text area only; 1: Show on micromap only; 2: Show both on text area and micromap.
+*** (DEPRECATED) True: Show on micromap column 1.
+*** (DEPRECATED) False: Don't show on micromap.
+** "map_only": int:
+*** 0: Show on text area only.
+*** 1: Show on micromap only.
+*** 2: Show both on text area and micromap.
 
 * MARKERS_ADD_MANY: Adds one or multiple fragments at once. Also returns number of fragments. Parameters:
 ** "x", "y", "len": The same as for MARKERS_ADD, but can be also list/tuple of int. Lists/tuples must contain the equal number of elements (otherwise the minimal number of elements will be used).
@@ -3221,6 +3291,15 @@ Notes:
 * Param "color_bg" can be COLOR_NONE: it uses usual back-color.
 * Params "color_font", "color_border" can be COLOR_NONE: it uses usual text-color.
 * If fragments from other plugins already exist (e.g. from Color_Text, Highlight_Occurrences, Spell_Checker), you cannot just add items after them in unsorted mode (MARKERS_SET_SORTED is off), you should clear all existing fragments first, optionally: backup/restore other fragments.
+
+Some "tag" values are very special. Part of Pascal sources:
+
+    const FindHiAll_TagValue = 99; //attrib-tag for Highlight_all_matches option ('Hi')
+    const FindOccur_TagValue = 98; //attrib-tag for 'expand selection to next word' command
+                                   //tags must be <120, coz PROC_GET_UNIQUE_TAG starts with 120
+    const FindPairBracket_TagValue = 1;
+    const PluginHiOccur_TagValue = 101;
+    const PluginSpellChecker_TagValue = 105;
 
 ===Editor.hotspots===
 
@@ -3382,7 +3461,7 @@ Possible values of "id":
 ** "color": int: Color.
 ** "bitmap": 2-tuple of int: Size of bitmap, or (0, 0) if no bitmap.
 
-* GAP_MAKE_BITMAP: Action is needed only if you want to paint bitmap in gap, it's not needed for empty gaps. Makes new bitmap for future gap. Size of bitmap is (num1, num2). Returns 2-tuple (id_bitmap, id_canvas).
+* (DEPRECATED, use bitmap_proc instead) GAP_MAKE_BITMAP: Action is needed only if you want to paint bitmap in gap, it's not needed for empty gaps. Makes new bitmap for future gap. Size of bitmap is (num1, num2). Returns 2-tuple (id_bitmap, id_canvas).
 ** "id_bitmap": bitmap handle, needed to later call GAP_ADD.
 ** "id_canvas": canvas handle, needed to paint on bitmap, by <code>canvas_proc()</code>.
 
@@ -3390,7 +3469,7 @@ Possible values of "id":
 ** "num1": int: Line index; can be -1 for gap before the first line.
 ** "num2": int: Can be:
 *** 0: gap is empty, filled with specified color.
-*** handle of bitmap (created via GAP_MAKE_BITMAP): place bitmap in the gap.
+*** handle of bitmap (created via <code>bitmap_proc()</code>): place bitmap in the gap.
 *** handle of dialog (created via <code>dlg_proc()</code>): place dialog in the gap.
 ** "tag": int 32-bit: Some value attached to gap, to separate gaps from different plugins.
 ** "size": int: If >0, it is gap height in pixels. If 0, gap height is calculated from bitmap handle.
@@ -3411,7 +3490,10 @@ class Command:
             self.do_gap(i*2)
 
     def do_gap(self, num):
-        id_bitmap, id_canvas = ed.gap(GAP_MAKE_BITMAP, 600, 50)
+        NW = 600
+        NH = 50
+        id_bitmap = bitmap_proc(0, BITMAP_CREATE, NW, NH)
+        id_canvas = bitmap_proc(id_bitmap, BITMAP_GET_CANVAS)
         canvas_proc(id_canvas, CANVAS_SET_BRUSH, color=0xa0ffa0)
         canvas_proc(id_canvas, CANVAS_POLYGON, '200,0,300,30,200,50')
         canvas_proc(id_canvas, CANVAS_SET_BRUSH, color=0xffffff, style=BRUSH_CLEAR)
@@ -3513,8 +3595,8 @@ Controls editor's micromap. Possible values of "id":
 ** "color": RGB color of column background. Can be COLOR_NONE.
 
 * MICROMAP_ADD: Add micromap column. Returns bool: tag was not used, column was added.
-** "param1": Int 32-bit tag of column.
-** "param2": Width of column in 'units'. Where 100 'units' correspond to 'normal' column width.
+** "param1": Int tag of column. Value must be in the range 0...127.
+** "param2": Width of column in 'units'. Where 100 'units' correspond to 'normal' column width. Value must be in the range 1...1000. For example, if you remove all columns, then add 2 columns with width 100 and 500, they will share the micromap width in ratio 1/6 and 5/6.
 ** "param3": RGB color of column background, or COLOR_NONE for default themed color.
 
 * MICROMAP_DELETE: Delete micromap column by its tag. Param "param1": tag. Returns bool: column was found and deleted.
@@ -3523,11 +3605,16 @@ Notes:
 
 * CudaText has 3 default micromap columns:
 ** tag=0: line states.
-** tag=1: marks of plugins.
+** tag=1: bookmarks (if app option "micromap_bookmarks" is on) and marks of plugins.
 ** tag=2: selections.
 * On column adding, column width will be:
 ** Auto-sized to the current editor font, if "micromap_on_scrollbar":false.
 ** Auto-sized to scrollbar width, if "micromap_on_scrollbar":true.
+
+About width of micromap:
+
+* PROP_MICROMAP_WIDTH sets the width of all columns in pixels.
+* MICROMAP_ADD sets not the pixel width of each column. It sets the relative width, which is in abstract "units". For example, you may remove all columns, and add 2 columns: width of 90 "units", width of 400 "units". It will distribute the pixel width (set by PROP_MICROMAP_WIDTH) in proportions: 90/490 and 400/490.
 
 =HTML formatting=
 Several APIs support rendering of HTML-formatted strings. Small subset of HTML tags is supported:
@@ -5386,15 +5473,36 @@ It provides:
 * delete: PROP_IN_HISTORY (it always returned False in last years)
 
 1.0.483 (app 1.236.0)
-* add: on_state: APPSTATE_SESSION_SET
-* add: dlg_proc: controls "memo"/"edit"/"edit_pwd"/"spinedit"/"combo" support new event "on_key_press"
-* add: file_open: function supports empty filename1 and non-empty filename2
+* add: app_proc: PROC_IDLE
+* add: Editor.get_prop/set_prop: PROP_FN
+* add. Editor.get_prop/set_prop: PROP_MICROMAP_WIDTH
+* add. Editor.get_prop/set_prop: PROP_MICROMAP_ON_SCROLLBAR
+* add. Editor.get_prop/set_prop: PROP_MICROMAP_AT_LEFT
 * add: Editor.get_prop: PROP_TAB_ID is now much more unique, and it is persistent (it is saved/restored to session)
 * add: Editor.get_prop: PROP_HANDLE_IMAGE
+* add: Editor.get_prop: PROP_HANDLE_PARENT2
+* add: Editor.bookmark: BOOKMARK_APPEND
+* add: Editor.bookmark: BOOKMARK2_APPEND
+* add: Editor.micromap: allow to delete column with tag=0
+* add: bitmap_proc()
+* add: file_open: function supports empty filename1 and non-empty filename2
+* add: dlg_proc: controls "memo"/"edit"/"edit_pwd"/"spinedit"/"combo" support new event "on_key_press"
+* add: canvas_proc: CANVAS_BITMAP
+* add: canvas_proc: CANVAS_BITMAP_SIZED
+* add: canvas_proc: CANVAS_IMAGE
+* add: canvas_proc: CANVAS_IMAGE_SIZED
+* add: canvas_proc: CANVAS_COPY_RECT
+* add: canvas_proc: CANVAS_GRADIENT
 * add: image_proc: IMAGE_GET_SIZE_UI
-* add: app_proc: PROC_IDLE
-* change: Editor.get_filename: for Editor not in ui-tab, returns now empty str (before it was None)
-* delete: PROP_PICTURE (none public plugins did use it; use PROP_HANDLE_IMAGE instead)
-* deprecate: app_idle()
+* add: image_proc: IMAGE_GET_BITMAP
+* add: on_state: APPSTATE_SESSION_SET
+* deprecate: app_idle (use PROC_IDLE instead)
+* deprecate: Editor.get_filename (use PROP_FN instead)
+* deprecate: Editor.attr: param "show_on_map" cannot be boolean anymore
+* deprecate: GAP_MAKE_BITMAP (use bitmap_proc instead)
+* deprecate: IMAGE_PAINT (use CANVAS_IMAGE instead)
+* deprecate: IMAGE_PAINT_SIZED (use CANVAS_IMAGE_SIZED instead)
+* delete: dlg_proc control "paintbox" (almost none public plugins used it; use "image" instead)
+* delete: PROP_PICTURE (none public plugins used it; use PROP_HANDLE_IMAGE instead)
 
 [[Category:CudaText]]

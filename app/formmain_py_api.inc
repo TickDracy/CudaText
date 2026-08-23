@@ -126,7 +126,7 @@ begin
             Frame:= fmMain.Frames[0];
             TGroupsHelper.ForceFrameVisible(Frame);
             Frame.SetFocus();
-            Result:= Frame.Ed1;
+            Result:= Frame.EdFirst;
           end
           else
             MsgLogConsole('ERROR: API "ed" is Nil, and no frames; report to author what you are doing');
@@ -137,7 +137,7 @@ begin
       begin
         Frame:= fmMain.FrameOfPopup;
         if Assigned(Frame) then
-          Result:= Frame.Ed1
+          Result:= Frame.EdFirst
         else
           Result:= fmMain.CurrentEditor;
       end;
@@ -146,7 +146,7 @@ begin
       begin
         nTab:= Handle-cPyEditorHandleMin;
         if (nTab>=0) and (nTab<fmMain.FrameCount) then
-          Result:= fmMain.Frames[nTab].Ed1;
+          Result:= fmMain.Frames[nTab].EdFirst;
       end;
   end;
 end;
@@ -507,7 +507,7 @@ end;
 function api_app_ver(Self, Args : PPyObject): PPyObject; cdecl;
 begin
   with AppPython.Engine do
-    Result:= Py_BuildValue('(is)',
+    Result:= Py_BuildValue('(ss)',
       cAppApiVersion,
       cAppExeVersion
       );
@@ -547,7 +547,7 @@ end;
 
 function api_app_idle(Self, Args: PPyObject): PPyObject; cdecl;
 {
-plan:
+TODO
 2026.09 or .10 - add here Console message "ERROR: app_idle is deprecated, avoid it"
 2026.12 - update all plugins and delete app_idle
 }
@@ -1356,9 +1356,16 @@ begin
       )) then
     begin
       Ed:= PyHelper_EditorFromHandle(H);
+
+      {
+      type for 'x', 'y', 'len' is string, to support this API:
+      * MARKERS_ADD_MANY: Adds one or multiple fragments at once.
+      ** "x", "y", "len": The same as for MARKERS_ADD, but can be also list/tuple of int.
+      }
       StrX:= string(PtrX);
       StrY:= string(PtrY);
       StrLen:= string(PtrLen);
+
       StrColorFont:= string(PtrColorFont);
       StrColorBg:= string(PtrColorBg);
       StrColorBorder:= string(PtrColorBorder);
@@ -1407,7 +1414,7 @@ begin
                   'border_up',
                   Ord(Mark.LinePart.BorderUp),
                   'show_on_map',
-                  Mark.TagEx,
+                  Longint(Mark.TagEx),
                   'map_only',
                   Ord(Mark.MicromapMode)
                   ));
@@ -2121,6 +2128,28 @@ begin
         AutoDel:= TATBookmarkAutoDelete.ByOption;
 
       case NId of
+        BOOKMARK_APPEND:
+          begin
+            Ed.BookmarkAppendEx(NLine, NKind, StrText,
+                AutoDel,
+                Bool(NShowInList),
+                NTag,
+                Ed.Strings.Bookmarks
+                );
+            Result:= ReturnNone;
+          end;
+
+        BOOKMARK2_APPEND:
+          begin
+            Ed.BookmarkAppendEx(NLine, NKind, StrText,
+                AutoDel,
+                Bool(NShowInList),
+                NTag,
+                Ed.Strings.Bookmarks2
+                );
+            Result:= ReturnNone;
+          end;
+
         BOOKMARK_SET:
           begin
             Ed.BookmarkSetForLine(NLine, NKind, StrText,
@@ -2600,7 +2629,7 @@ begin
       fmMain.FPyCompletionProps.Text:= Str;
       fmMain.FPyCompletionProps.CharsLeft:= NChars1;
       fmMain.FPyCompletionProps.CharsRight:= NChars2;
-      fmMain.FPyCompletionProps.CaretPos:= Point(Caret.PosX, Caret.PosY);
+      fmMain.FPyCompletionProps.CaretPos:= Caret.AsPoint;
 
       DoApplyCompletionListboxStyle(Bool(NAltOrder));
       EditorShowCompletionListbox(Ed,
@@ -2641,7 +2670,7 @@ begin
       fmMain.FPyCompletionProps.Text:= StrText;
       fmMain.FPyCompletionProps.CharsLeft:= NChars;
       fmMain.FPyCompletionProps.CharsRight:= 0;
-      fmMain.FPyCompletionProps.CaretPos:= Point(Caret.PosX, Caret.PosY);
+      fmMain.FPyCompletionProps.CaretPos:= Caret.AsPoint;
 
       DoApplyCompletionListboxStyle(false);
       EditorShowCompletionListbox(Ed,
@@ -3406,9 +3435,23 @@ begin
       Str:= string(Ptr);
       Frame:= TGroupsHelper.GetEditorFrame(Ed);
 
-      //Application.MainForm.Caption:= 'get_prop '+IntToStr(id)+', filename: '+Ed.FileName;
-
       case Id of
+        PROP_FN:
+          begin
+            if Assigned(Frame) then
+            begin
+              if Frame.FrameKind=TAppFrameKind.Editor then
+                Result:= PyUnicodeFromString(Ed.FileName)
+              else
+              if Str='*' then
+                Result:= PyUnicodeFromString(Frame.GetFileName(Ed))
+              else
+                Result:= PyUnicodeFromString(string('?'));
+            end
+            else
+              Result:= PyUnicodeFromString(Ed.FileName);
+          end;
+
         PROP_GUTTER_ALL:
           Result:= PyBool_FromLong(Ord(Ed.OptGutterVisible));
 
@@ -3761,6 +3804,15 @@ begin
         PROP_MICROMAP:
           Result:= PyBool_FromLong(Ord(Ed.OptMicromapVisible));
 
+        PROP_MICROMAP_WIDTH:
+          Result:= PyLong_FromLong(Ed.OptMicromapWidthInAvgChars);
+
+        PROP_MICROMAP_ON_SCROLLBAR:
+          Result:= PyBool_FromLong(Ord(Ed.OptMicromapOnScrollbar));
+
+        PROP_MICROMAP_AT_LEFT:
+          Result:= PyBool_FromLong(Ord(Ed.OptMicromapAtLeft));
+
         PROP_VISIBLE_LINES:
           Result:= PyLong_FromLong(Ed.GetVisibleLines);
 
@@ -3955,21 +4007,32 @@ begin
         PROP_HANDLE_PRIMARY:
           begin
             if Assigned(Frame) then
-              Result:= PyHelper_ObjectHandle(Frame.Ed1)
+              Result:= PyHelper_ObjectHandle(Frame.EdFirst)
             else
               Result:= ReturnNone;
           end;
         PROP_HANDLE_SECONDARY:
           begin
             if Assigned(Frame) then
-              Result:= PyHelper_ObjectHandle(Frame.Ed2)
+              Result:= PyHelper_ObjectHandle(Frame.EdSecond)
             else
               Result:= ReturnNone;
           end;
 
         PROP_HANDLE_PARENT:
           begin
-            Result:= PyHelper_ObjectHandle(Ed.Parent);
+            if Assigned(Frame) then
+              Result:= PyHelper_ObjectHandle(Frame.FormForPy)
+            else
+              Result:= PyLong_FromLong(0);
+          end;
+
+        PROP_HANDLE_PARENT2:
+          begin
+            if Assigned(Frame) then
+              Result:= PyHelper_ObjectHandle(Frame)
+            else
+              Result:= PyLong_FromLong(0);
           end;
 
         PROP_SCROLLSTYLE_HORZ:
@@ -4638,6 +4701,15 @@ begin
             Include(Ed.ModifiedOptions, TATEditorModifiedOption.MicromapVisible);
           end;
 
+        PROP_MICROMAP_WIDTH:
+          Ed.OptMicromapWidthInAvgChars:= ValueInt;
+
+        PROP_MICROMAP_ON_SCROLLBAR:
+          Ed.OptMicromapOnScrollbar:= ValueBool;
+
+        PROP_MICROMAP_AT_LEFT:
+          Ed.OptMicromapAtLeft:= ValueBool;
+
         PROP_SCROLL_VERT_INFO:
           begin
             EditorStringToScrollInfo(Ed, Str, true);
@@ -4689,6 +4761,22 @@ begin
 
         PROP_ONE_LINE:
           Ed.ModeOneLine:= ValueBool;
+
+        PROP_FN:
+          begin
+            if Assigned(Frame) then
+            begin
+              Frame.NotifEnabled:= false;
+              Frame.SetFileName(Ed, Str);
+              Frame.UpdateCaptionFromFilename;
+              Frame.DoLexerFromFilename(Ed, Str);
+              Frame.NotifEnabled:= Str<>'';
+              if Frame.Visible then
+                fmMain.UpdateStatusbar;
+            end
+            else
+              Ed.FileName:= Str;
+          end;
 
         PROP_INDENT_SIZE:
           Ed.OptIndentSize:= ValueInt;
@@ -6015,12 +6103,26 @@ begin
               i:= WND_FULLSCREEN2
             else if fmMain.ShowFullscreen then
               i:= WND_FULLSCREEN
+            {$ifdef windows}
+            // On Windows, the LCL TForm.WindowState property is NOT reliably
+            // updated to wsMinimized when the user minimizes the window
+            // (the LCL Win32 widgetset doesn't update it on SC_MINIMIZE).
+            // So we query the actual OS-level window state via IsIconic/IsZoomed.
+            // https://github.com/Alexey-T/CudaText/issues/6417
+            else if IsIconic(fmMain.Handle) then
+              i:= WND_MINIMIZED
+            else if IsZoomed(fmMain.Handle) then
+              i:= WND_MAXIMIZED
+            else
+              i:= WND_NORMAL;
+            {$else}
             else if fmMain.WindowState=wsMaximized then
               i:= WND_MAXIMIZED
             else if fmMain.WindowState=wsMinimized then
               i:= WND_MINIMIZED
             else
               i:= WND_NORMAL;
+            {$endif}
             Result:= PyLong_FromLong(Ord(i));
           end;
 
@@ -8250,16 +8352,101 @@ begin
 end;
 
 
+function api_bitmap_proc(Self, Args: PPyObject): PPyObject; cdecl;
+var
+  IdBitmap: Int64;
+  IdAction, NParam1, NParam2: integer;
+  Bmp: TBitmap;
+  Obj: TObject;
+begin
+  with AppPython.Engine do
+    if Bool(PyArg_ParseTuple(Args, 'Liii:bitmap_proc',
+              @IdBitmap, @IdAction, @NParam1, @NParam2)) then
+    begin
+      Bmp:= nil;
+      if IdBitmap<>0 then
+      begin
+        Obj:= TObject(PtrInt(IdBitmap));
+        if not (Obj is TBitmap) then
+        begin
+          MsgLogConsole('ERROR: bitmap_proc() gets bad handle, of type '+Obj.ClassName);
+          Result:= ReturnNone;
+          exit;
+        end;
+        Bmp:= TBitmap(Obj);
+      end;
+
+      if (IdAction<>BITMAP_CREATE) and (Bmp=nil) then
+      begin
+        MsgLogConsole('ERROR: bitmap_proc() gets zero bitmap handle');
+        Result:= ReturnNone;
+        exit;
+      end;
+
+      if (IdAction=BITMAP_CREATE) or (IdAction=BITMAP_SET_SIZE) then
+        if (NParam1<=0) or (NParam2<=0) then
+        begin
+          MsgLogConsole(Format('ERROR: bitmap_proc() gets bad w=%d, h=%d', [NParam1, NParam2]));
+          Result:= ReturnNone;
+          exit;
+        end;
+
+      case IdAction of
+        BITMAP_CREATE:
+          begin
+            Bmp:= TBitmap.Create;
+            Bmp.PixelFormat:= pf24bit;
+            Bmp.SetSize(NParam1, NParam2);
+            Result:= PyHelper_ObjectHandle(Bmp);
+          end;
+
+        BITMAP_GET_CANVAS:
+          begin
+            Result:= PyHelper_ObjectHandle(Bmp.Canvas);
+          end;
+
+        BITMAP_FREE:
+          begin
+            FreeAndNil(Bmp);
+            Result:= ReturnNone;
+          end;
+
+        BITMAP_SET_SIZE:
+          begin
+            if (NParam1>0) and (NParam2>0) then
+              Bmp.SetSize(NParam1, NParam2);
+            Result:= ReturnNone;
+          end;
+
+        BITMAP_GET_SIZE:
+          begin
+            Result:= Py_BuildValue('(ii)', Bmp.Width, Bmp.Height);
+          end;
+
+        else
+          Result:= ReturnNone;
+      end;
+    end
+    else
+      Result:= ReturnNone;
+end;
+
+
 function api_canvas_proc(Self, Args: PPyObject): PPyObject; cdecl;
 var
   C: TCanvas;
-  IdCanvas: Int64;
-  IdAction, NColor, NSize, NStyle, NX, NY, NX2, NY2, NP1, NP2: integer;
+  IdCanvas, Num64: Int64;
+  Obj: TObject;
+  IdAction, NColor, NSize, NStyle, NX, NY, NX2, NY2: integer;
+  NP1, NP2: Int64; //param "p1" must be Int64 to pass handle of bitmap/image
   PtrText: PChar;
   StrText: string;
+  TempPntArray: TAppPointArray;
+  TempRect: TRect;
+  Sep: TATStringSeparator;
 begin
   with AppPython.Engine do
-    if Bool(PyArg_ParseTuple(Args, 'Lisiiiiiiiii:canvas_proc',
+    if Bool(PyArg_ParseTuple(Args, 'LisiiiiiiiLL:canvas_proc',
               @IdCanvas, @IdAction, @PtrText, @NColor, @NSize,
               @NX, @NY, @NX2, @NY2, @NStyle, @NP1, @NP2)) then
     begin
@@ -8349,6 +8536,50 @@ begin
             Result:= ReturnNone;
           end;
 
+        CANVAS_BITMAP,
+        CANVAS_BITMAP_SIZED:
+          begin
+            Num64:= NP1;
+            if Num64=0 then
+              MsgLogConsole('ERROR: canvas_proc(...CANVAS_BITMAP...) gets bad or zero bitmap handle')
+            else
+            begin
+              Obj:= TObject(PtrInt(Num64));
+              if not (Obj is TBitmap) then
+                MsgLogConsole('ERROR: canvas_proc(...CANVAS_BITMAP...) gets bad bitmap handle, of type '+Obj.ClassName)
+              else
+              begin
+                if IdAction=CANVAS_BITMAP then
+                  C.Draw(NX, NY, TBitmap(Obj))
+                else
+                  C.StretchDraw(Rect(NX, NY, NX2, NY2), TBitmap(Obj));
+              end;
+            end;
+            Result:= ReturnNone;
+          end;
+
+        CANVAS_IMAGE,
+        CANVAS_IMAGE_SIZED:
+          begin
+            Num64:= NP1;
+            if Num64=0 then
+              MsgLogConsole('ERROR: canvas_proc(...CANVAS_IMAGE...) gets bad or zero image handle')
+            else
+            begin
+              Obj:= TObject(PtrInt(Num64));
+              if not (Obj is TImage) then
+                MsgLogConsole('ERROR: canvas_proc(...CANVAS_IMAGE...) gets bad image handle, of type '+Obj.ClassName)
+              else
+              begin
+                if IdAction=CANVAS_IMAGE then
+                  C.Draw(NX, NY, TImage(Obj).Picture.Graphic)
+                else
+                  C.StretchDraw(Rect(NX, NY, NX2, NY2), TImage(Obj).Picture.Graphic);
+              end;
+            end;
+            Result:= ReturnNone;
+          end;
+
         CANVAS_ELLIPSE:
           begin
             C.Ellipse(NX, NY, NX2, NY2);
@@ -8357,7 +8588,57 @@ begin
 
         CANVAS_POLYGON:
           begin
-            Canvas_PaintPolygonFromSting(C, StrText);
+            TempPntArray:= ConvertStringToPointArray(StrText);
+            if Length(TempPntArray)>2 then
+              C.Polygon(TempPntArray)
+            else
+              MsgLogConsole('ERROR: canvas_proc(...CANVAS_POLYGON...) gets bad coords: '+StrText);
+            Result:= ReturnNone;
+          end;
+
+        CANVAS_COPY_RECT:
+          begin
+            Num64:= NP1;
+            if Num64=0 then
+              MsgLogConsole('ERROR: canvas_proc(...CANVAS_COPY_RECT...) gets bad or zero source-canvas handle')
+            else
+            begin
+              Obj:= TObject(PtrInt(Num64));
+              if not (Obj is TCanvas) then
+                MsgLogConsole('ERROR: canvas_proc(...CANVAS_COPY_RECT...) gets bad source-canvas handle, of type '+Obj.ClassName)
+              else
+              begin
+                Sep.Init(StrText, ',');
+                Sep.GetItemInt(TempRect.Left, MaxInt);
+                Sep.GetItemInt(TempRect.Top, MaxInt);
+                Sep.GetItemInt(TempRect.Right, MaxInt);
+                Sep.GetItemInt(TempRect.Bottom, MaxInt);
+                if (TempRect.Left=MaxInt) or
+                   (TempRect.Top=MaxInt) or
+                   (TempRect.Right=MaxInt) or
+                   (TempRect.Bottom=MaxInt) then
+                  MsgLogConsole('ERROR: canvas_proc(...CANVAS_COPY_RECT...) gets bad source-rect: '+StrText)
+                else
+                  C.CopyRect(
+                    Rect(NX, NY, NX2, NY2),
+                    TCanvas(Obj),
+                    TempRect);
+              end;
+            end;
+            Result:= ReturnNone;
+          end;
+
+        CANVAS_GRADIENT:
+          begin
+            if not ((NStyle>=0) and (NStyle<=Ord(High(TGradientDirection)))) then
+              MsgLogConsole('ERROR: canvas_proc(...CANVAS_GRADIENT...) gets bad direction')
+            else
+              C.GradientFill(
+                Rect(NX, NY, NX2, NY2),
+                NColor,
+                NSize,
+                TGradientDirection(NStyle)
+                );
             Result:= ReturnNone;
           end;
 
@@ -8447,6 +8728,14 @@ begin
             Result:= Py_BuildValue('(ii)',
               Image.Width,
               Image.Height);
+          end;
+
+        APP_IMAGE_GET_BITMAP:
+          begin
+            if Assigned(Image.Picture) and Assigned(Image.Picture.Bitmap) then
+              Result:= PyHelper_ObjectHandle(Image.Picture.Bitmap)
+            else
+              Result:= PyLong_FromLong(0);
           end;
 
         APP_IMAGE_LOAD:
@@ -8554,7 +8843,7 @@ function api_ed_gap(Self, Args: PPyObject): PPyObject; cdecl;
 var
   H, Num1, Num2: Int64;
   Id, NColor, NSize, NTag, NOnTop: integer;
-  Ed, EdBrother: TATSynEdit;
+  Ed, EdOther: TATSynEdit;
   Frame: TEditorFrame;
   Bmp: TBitmap;
   Form: TCustomForm;
@@ -8617,11 +8906,11 @@ begin
                 Frame:= TGroupsHelper.GetEditorFrame(Ed);
                 if Assigned(Frame) and Frame.EditorsLinked then
                 begin
-                  EdBrother:= TGroupsHelper.GetEditorBrother(Ed);
-                  if Assigned(EdBrother) then
+                  EdOther:= TGroupsHelper.GetEditorBrother(Ed);
+                  if Assigned(EdOther) then
                   begin
-                    EdBrother.OptLastLineOnTop:= true;
-                    Include(EdBrother.ModifiedOptions, TATEditorModifiedOption.LastLineOnTop);
+                    EdOther.OptLastLineOnTop:= true;
+                    Include(EdOther.ModifiedOptions, TATEditorModifiedOption.LastLineOnTop);
                   end;
                 end;
 
@@ -10311,7 +10600,7 @@ begin
             else
             begin
               Obj:= TObject(PtrInt(NIndex));
-              if not (Obj is TForm) then
+              if not (Obj is TForm) and not (Obj is TFrame) then
               begin
                 MsgLogConsole('ERROR: dlg_proc(...DLG_DOCK...) gets bad form handle, of type '+Obj.ClassName);
                 exit(ReturnNone);
@@ -10354,13 +10643,7 @@ begin
         DLG_CTL_HANDLE:
           begin
             if Assigned(Ctl) then
-            begin
-              if Ctl is TPaintBox then
-                Num64:= PtrInt(TPaintBox(Ctl).Canvas)
-              else
-                Num64:= PtrInt(Ctl);
-              Result:= PyLong_FromLongLong(Num64);
-            end
+              Result:= PyHelper_ObjectHandle(Ctl)
             else
               Result:= ReturnNone;
           end;
@@ -10485,7 +10768,7 @@ begin
 
         FINDER_SET_FINDTEXT:
           begin
-            Finder.StrFind:= StrValue;
+            Finder.StrFind:= UTF8Decode(StrValue);
             Result:= ReturnNone;
           end;
 
@@ -10496,7 +10779,7 @@ begin
 
         FINDER_SET_REPTEXT:
           begin
-            Finder.StrReplace:= StrValue;
+            Finder.StrReplace:= UTF8Decode(StrValue);
             Result:= ReturnNone;
           end;
 
@@ -10856,6 +11139,7 @@ begin
     AddMethod('statusbar_proc', @api_statusbar_proc, '');
     AddMethod('listbox_proc', @api_listbox_proc, '');
     AddMethod('canvas_proc', @api_canvas_proc, '');
+    AddMethod('bitmap_proc', @api_bitmap_proc, '');
     AddMethod('timer_proc', @api_timer_proc, '');
     AddMethod('dlg_proc', @api_dlg_proc, '');
     AddMethod('imagelist_proc', @api_imagelist_proc, '');

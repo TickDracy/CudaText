@@ -39,7 +39,7 @@ begin
   begin
     case Frame.FrameKind of
       TAppFrameKind.Editor:
-        Result:= Frame.Editor.FileName;
+        Result:= Frame.EdCurrent.FileName;
       else
         Result:= Frame.FileName;
     end;
@@ -276,10 +276,7 @@ begin
       DoDialogSaveTabs;
 
     cmd_DialogLexerProp:
-      begin
-        if Assigned(Frame) then
-          DoDialogLexerProp(Frame.Lexer[Ed]);
-      end;
+      DoDialogLexerProp(Ed);
 
     cmd_DialogLexerLib:
       DoDialogLexerLib;
@@ -665,6 +662,21 @@ begin
       begin
         if Assigned(Frame) then
           Frame.TabColor:= clNone;
+      end;
+
+    cmd_SetTabColorFont:
+      begin
+        if Assigned(Frame) then
+        begin
+          NColor:= PyHelper_DialogColorPicker(Frame.TabFontColor);
+          if NColor>=0 then
+            Frame.TabFontColor:= NColor;
+        end;
+      end;
+    cmd_ResetTabColorFont:
+      begin
+        if Assigned(Frame) then
+          Frame.TabFontColor:= clNone;
       end;
 
     cmd_ToggleTabPinned:

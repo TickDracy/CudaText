@@ -154,7 +154,7 @@ begin
       if Frame=nil then exit;
       Frame.TabCaption:= msgFinderRegexMatchesNumbered;
       Frame.TabCaptionReason:= TAppTabCaptionReason.UnsavedSpecial;
-      Ed:= Frame.Ed1;
+      Ed:= Frame.EdFirst;
       Ed.Strings.LoadFromStrings(Matches, TATLineEnds.Unix, false);
       Ed.UpdateWrapInfo(true, false); //AForceUpdate=True to fix #4609
       Ed.Update;
@@ -280,9 +280,9 @@ begin
     if bChangeFrame then
       SetFrame(FrameNew);
 
-    ACounter+= FinderReplaceAll(FrameNew.Ed1, true);
+    ACounter+= FinderReplaceAll(FrameNew.EdFirst, true);
     if not FrameNew.EditorsLinked then
-      ACounter+= FinderReplaceAll(FrameNew.Ed2, true);
+      ACounter+= FinderReplaceAll(FrameNew.EdSecond, true);
   end;
 
   NTime:= (GetTickCount64-NTick) div 1000;
@@ -316,7 +316,7 @@ begin
   if Category in [TAppFinderOperationCategory.Find, TAppFinderOperationCategory.ReplaceOne] then
   begin
     if Frame.FrameKind=TAppFrameKind.ImageViewer then exit;
-    if Frame.Editor.Carets.Count=0 then
+    if Frame.EdCurrent.Carets.Count=0 then
     begin
       MsgStatus(msgCannotFindWithoutCaret);
       exit;
@@ -326,7 +326,7 @@ begin
   if Category=TAppFinderOperationCategory.ReplaceOne then
   begin
     if Frame.FrameKind<>TAppFrameKind.Editor then exit;
-    if Frame.Editor.ModeReadOnly then exit;
+    if Frame.EdCurrent.ModeReadOnly then exit;
   end;
 
   //keep focus in Find field, else focus find or rep field
@@ -470,7 +470,7 @@ begin
       Frame:= CurrentFrame;
       if Assigned(Frame) then
       begin
-        EditorClearHiAllMarkers(Frame.Editor);
+        EditorClearHiAllMarkers(Frame.EdCurrent);
         Frame.SetFocus;
       end;
     end;
@@ -567,7 +567,7 @@ begin
 
   Frame:= CurrentFrame;
   if Frame=nil then exit;
-  Ed:= Frame.Editor;
+  Ed:= Frame.EdCurrent;
 
   StrSel:= '';
   StrWord:= '';
@@ -798,7 +798,7 @@ begin
     exit;
   end;
 
-  FFinder.Editor:= Frame.Editor;
+  FFinder.Editor:= Frame.EdCurrent;
   FFinder.OptBack:= false;
   FFinder.OptFromCaret:= false;
   FFinder.OptDisableOnProgress:= false;

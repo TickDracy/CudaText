@@ -35,11 +35,10 @@ begin
   F.OnGetSaveDialog:= @DoGetSaveDialog;
   F.Splitter.OnPaint:= @SplitterOnPaintDummy;
 
-  F.Groups:= GroupsMain;
-  F.OnInitAdapter(F.Adapter[F.Ed1]);
+  F.OnInitAdapter(F.Adapter[F.EdFirst]);
 
-  F.Ed1.PopupText:= PopupText;
-  F.Ed2.PopupText:= PopupText;
+  F.EdFirst.PopupText:= PopupText;
+  F.EdSecond.PopupText:= PopupText;
 
   F.NotifEnabled:= false;
 end;
@@ -139,7 +138,7 @@ begin
   begin
     Frame:= Data.TabObject as TEditorFrame;
     Assert(Assigned(Frame), 'Frame=nil in DoOnTabAdded');
-    DoPyEvent(Frame.Ed1, TAppPyEvent.OnTabAdd, []);
+    DoPyEvent(Frame.EdFirst, TAppPyEvent.OnTabAdd, []);
   end;
 end;
 
@@ -166,8 +165,8 @@ begin
     for iFrame:= 0 to FrameCount-1 do
     begin
       F:= Frames[iFrame];
-      if (F.Ed1=AppCodetreeState.Editor) or
-         (F.Ed2=AppCodetreeState.Editor) then
+      if (F.EdFirst=AppCodetreeState.Editor) or
+         (F.EdSecond=AppCodetreeState.Editor) then
       begin
         CachedTreeview:= F.CachedTreeView[AppCodetreeState.Editor];
         if Assigned(CachedTreeview) then
@@ -190,7 +189,7 @@ begin
   begin
     //prevent ListIndexError on file_open(..)
     if not FDisableTreeClearing then
-      if F.Editor<>AppCodetreeState.Editor then
+      if F.EdCurrent<>AppCodetreeState.Editor then
         DoCodetree_Clear;
   end;
 
@@ -210,8 +209,8 @@ begin
     F:= Frames[iFrame];
     if not F.Visible then
     begin
-      F.Ed1.DoDeallocateHeavyBitmap;
-      F.Ed2.DoDeallocateHeavyBitmap;
+      F.EdFirst.DoDeallocateHeavyBitmap;
+      F.EdSecond.DoDeallocateHeavyBitmap;
     end;
   end;
 end;
@@ -234,9 +233,9 @@ begin
   CodeTreeFilterInput.Items.Assign(F.CodetreeFilterHistory);
 
   //load lexer-specific config+keymap
-  DoOps_LoadOptionsLexerSpecific(F, F.Ed1);
+  DoOps_LoadOptionsLexerSpecific(F, F.EdFirst);
   if not F.EditorsLinked then
-    DoOps_LoadOptionsLexerSpecific(F, F.Ed2);
+    DoOps_LoadOptionsLexerSpecific(F, F.EdSecond);
 
   //better to not hide prev status-msg "Closed: filename"
   if UiOps.ClearStatusbarMsgOnTabSwitching then
@@ -244,7 +243,7 @@ begin
   UpdateStatusbar; //always update statusbar on tab switching
 
   if AAllowEventOnTabChange then
-    DoPyEvent(F.Editor, TAppPyEvent.OnTabChange, []);
+    DoPyEvent(F.EdCurrent, TAppPyEvent.OnTabChange, []);
 
   UpdateFindDialogOnTabFocusing(F);
 end;
@@ -289,7 +288,7 @@ begin
     raise Exception.Create('Cannot get first tab');
 
   Frame:= (D.TabObject as TEditorFrame);
-  if Frame.Editor.Modified then
+  if Frame.EdCurrent.Modified then
     case MsgBox(
          Format(msgConfirmSaveModifiedTab, [Frame.TabCaption]),
          MB_YESNOCANCEL or MB_ICONWARNING
@@ -335,7 +334,7 @@ begin
   CloseFormAutoCompletion;
   DoTooltipHide;
 
-  if Frame.Editor.IsLocked then
+  if Frame.EdCurrent.IsLocked then
   begin
     ACanClose:= false;
     Exit
@@ -376,7 +375,7 @@ begin
 
   if not Application.Terminated then
   begin
-    if DoPyEvent(Frame.Editor, TAppPyEvent.OnCloseBefore, []).Val = TAppPyEventValue.False then
+    if DoPyEvent(Frame.EdCurrent, TAppPyEvent.OnCloseBefore, []).Val = TAppPyEventValue.False then
     begin
       ACanClose:= false;
       Exit
@@ -438,16 +437,16 @@ begin
     if not Frame.EditorsLinked then
       UpdateMenuRecent(Frame, 1);
 
-    Frame.Ed1.AdapterForHilite:= nil;
-    Frame.Ed2.AdapterForHilite:= nil;
+    Frame.EdFirst.AdapterForHilite:= nil;
+    Frame.EdSecond.AdapterForHilite:= nil;
 
-    Adapter:= Frame.Adapter[Frame.Ed1];
+    Adapter:= Frame.Adapter[Frame.EdFirst];
     Adapter.StopTreeUpdate;
     Adapter.Stop;
 
     if not Frame.EditorsLinked then
     begin
-      Adapter:= Frame.Adapter[Frame.Ed2];
+      Adapter:= Frame.Adapter[Frame.EdSecond];
       if Assigned(Adapter) then
       begin
         Adapter.StopTreeUpdate;
@@ -459,17 +458,17 @@ begin
       if bNeedTreeUpd then
         DoCodetree_Clear;
 
-    if Frame.Ed1.FileName<>'' then
-      MsgStatusFileClosed(Frame.Ed1.FileName, Frame.Ed2.FileName);
+    if Frame.EdFirst.FileName<>'' then
+      MsgStatusFileClosed(Frame.EdFirst.FileName, Frame.EdSecond.FileName);
 
     FNeedUpdateStatuses:= true;
 
-    if (FFinder.Editor=Frame.Ed1) or
-       (FFinder.Editor=Frame.Ed2) then
+    if (FFinder.Editor=Frame.EdFirst) or
+       (FFinder.Editor=Frame.EdSecond) then
       FFinder.Editor:= nil;
 
-    if (AppCodetreeState.Editor=Frame.Ed1) or
-       (AppCodetreeState.Editor=Frame.Ed2) then
+    if (AppCodetreeState.Editor=Frame.EdFirst) or
+       (AppCodetreeState.Editor=Frame.EdSecond) then
     begin
       AppCodetreeState.Editor:= nil;
       AppCodetreeState.Lexer:= '';
@@ -490,7 +489,7 @@ begin
     if Assigned(Data) and Assigned(Data.TabObject) then
     begin
       Frame:= Data.TabObject as TEditorFrame;
-      if DoPyEvent(Frame.Ed1, TAppPyEvent.OnTabMenu, []).Val=TAppPyEventValue.False then
+      if DoPyEvent(Frame.EdFirst, TAppPyEvent.OnTabMenu, []).Val=TAppPyEventValue.False then
         exit;
     end;
 
@@ -681,7 +680,7 @@ var
 begin
   F:= FrameOfPopup;
   if F=nil then exit;
-  DoFileRenameEx(F, F.Ed1);
+  DoFileRenameEx(F, F.EdFirst);
 end;
 
 procedure TfmMain.mnuTabSaveAsClick(Sender: TObject);
@@ -699,7 +698,7 @@ var
 begin
   F:= FrameOfPopup;
   if F=nil then exit;
-  DoFileSave(F, F.Editor);
+  DoFileSave(F, F.EdCurrent);
   //not F.DoFileSave, because TfmMain.DoFileSave considers the option "ui_save_always":false
 end;
 

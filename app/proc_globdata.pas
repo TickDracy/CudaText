@@ -481,7 +481,7 @@ type
     ReopenSession: boolean;
     ReopenSessionWithCmdLine: boolean;
     SessionSaveInterval: integer;
-    SessionSaveOnExit: boolean;
+    AutoSaveSession: boolean;
     BackupLastSessions: integer;
     SaveModifiedTabsOnClose: boolean;
 
@@ -1557,7 +1557,7 @@ function AppExpandAppDirInFilename(const fn: string): string;
 begin
   Result:= fn;
   if SBeginsWith(Result, '{AppDir}') then
-   Result:= AppDir_SettingsParent+Copy(Result, Length('{AppDir}')+1, MaxInt);
+    Result:= AppDir_SettingsParent+Copy(Result, Length('{AppDir}')+1, MaxInt);
 end;
 
 function AppCollapseHomeDirInFilename(const fn: string): string;
@@ -2365,7 +2365,7 @@ begin
     ReopenSession:= true;
     ReopenSessionWithCmdLine:= true;
     SessionSaveInterval:= 40;
-    SessionSaveOnExit:= true;
+    AutoSaveSession:= true;
     BackupLastSessions:= 4;
     SaveModifiedTabsOnClose:= true;
 
@@ -4187,8 +4187,19 @@ begin
     }
 
   ATEditorOptions.RenderSpaceBgAtLineEOL:=         Pos('n', s)=0;
+
+  {$if defined(LCLQt5) or defined(LCLQt6)}
+  ATEditorOptions.PreciseCalculationOfCharWidth:=  true;
+  {$else}
   ATEditorOptions.PreciseCalculationOfCharWidth:=  Pos('w', s)=0;
+  {$endif}
+
+  {$if defined(LCLGtk2) or defined(LCLGtk3)}
+  ATEditorOptions.TextoutNeedsOffsets:=            false;
+  {$else}
   ATEditorOptions.TextoutNeedsOffsets:=            Pos('o', s)>0;
+  {$endif}
+
   ATEditorOptions.CaretTextOverInvertedRect:=      Pos('c', s)>0;
   ATEditorOptions.EnableLigaturesOnLineWithCaret:= Pos('l', s)>0;
   ATEditorOptions.UnprintedWrapArrowAtEdge:=       Pos('W', s)>0;

@@ -109,12 +109,14 @@ BOOKMARK_SET         = 1
 BOOKMARK_CLEAR       = 2
 BOOKMARK_CLEAR_ALL   = 3
 BOOKMARK_SETUP       = 4
+BOOKMARK_APPEND      = 5
 BOOKMARK_GET_ALL     = 6
 BOOKMARK_DELETE_BY_TAG = 8
 
 BOOKMARK2_SET         = 11
 BOOKMARK2_CLEAR       = 12
 BOOKMARK2_CLEAR_ALL   = 13
+BOOKMARK2_APPEND      = 15
 BOOKMARK2_GET_ALL     = 16
 BOOKMARK2_DELETE_BY_TAG = 18
 
@@ -207,8 +209,12 @@ PROP_TAB_ID                = 48
 PROP_IN_SESSION            = 49
 PROP_COORDS                = 50
 PROP_ONE_LINE              = 51
+PROP_FN                    = 52
+PROP_MICROMAP_WIDTH        = 53
 PROP_CODETREE              = 54
 PROP_EDITORS_LINKED        = 55
+PROP_MICROMAP_ON_SCROLLBAR = 56
+PROP_MICROMAP_AT_LEFT      = 57
 PROP_KIND                  = 59
 PROP_V_MODE                = 60
 PROP_V_POS                 = 61
@@ -263,6 +269,7 @@ PROP_HANDLE_SELF        = 110
 PROP_HANDLE_PRIMARY     = 111
 PROP_HANDLE_SECONDARY   = 112
 PROP_HANDLE_PARENT      = 113
+PROP_HANDLE_PARENT2     = 114
 PROP_RECT_CLIENT        = 115
 PROP_RECT_TEXT          = 116
 PROP_THEMED             = 118
@@ -694,12 +701,18 @@ CANVAS_SET_TESTPANEL = 9
 CANVAS_GET_TEXT_SIZE = 15
 CANVAS_TEXT          = 20
 CANVAS_LINE          = 21
+CANVAS_BITMAP        = 22
+CANVAS_BITMAP_SIZED  = 23
 CANVAS_PIXEL         = 24
+CANVAS_IMAGE         = 25
+CANVAS_IMAGE_SIZED   = 26
+CANVAS_GRADIENT      = 29
 CANVAS_RECT          = 30
 CANVAS_RECT_FRAME    = 31
 CANVAS_RECT_FILL     = 32
 CANVAS_RECT_ROUND    = 33
 CANVAS_POLYGON       = 35
+CANVAS_COPY_RECT     = 36
 CANVAS_ELLIPSE       = 40
 
 FONT_B = 1
@@ -825,6 +838,7 @@ IMAGE_CREATE      = 0
 IMAGE_GET_SIZE    = 1
 IMAGE_LOAD        = 2
 IMAGE_GET_SIZE_UI = 3
+IMAGE_GET_BITMAP  = 4
 IMAGE_PAINT       = 5
 IMAGE_PAINT_SIZED = 6
 
@@ -1072,13 +1086,19 @@ CURSOR_SIZE_SW      = -28
 CURSOR_SIZE_S       = -29
 CURSOR_SIZE_SE      = -30
 
-API, EXE_VER = ct.app_ver()
+BITMAP_CREATE   = 0
+BITMAP_FREE     = 1
+BITMAP_SET_SIZE = 2
+BITMAP_GET_SIZE = 3
+BITMAP_GET_CANVAS = 4
+
+V_API, V_EXE = ct.app_ver()
 
 def app_exe_version():
-    return EXE_VER
+    return V_EXE
 
 def app_api_version():
-    return '1.0.'+str(API)
+    return V_API
 
 def app_path(id):
     return ct.app_path(id)
@@ -1257,7 +1277,12 @@ def statusbar_proc(id_bar, id_action, index=-1, tag=0, value=""):
     return ct.statusbar_proc(id_bar, id_action, index, tag, to_str(value))
 
 def canvas_proc(id_canvas, id_action, text='', color=-1, size=-1, x=-1, y=-1, x2=-1, y2=-1, style=-1, p1=-1, p2=-1):
+    if isinstance(text, (tuple, list)):
+        text = ','.join(map(str, text))
     return ct.canvas_proc(id_canvas, id_action, text, color, size, x, y, x2, y2, style, p1, p2)
+
+def bitmap_proc(id_bmp, id_action, param1=0, param2=0):
+    return ct.bitmap_proc(id_bmp, id_action, param1, param2)
 
 def _timer_proc_callback_proxy(tag='', info=''):
     if info in _live:
@@ -1506,7 +1531,7 @@ class Editor:
              color_font='', color_bg='', color_border='',
              font_bold='', font_italic='', font_strikeout='',
              border_left=0, border_right=0, border_down=0, border_up=0,
-             show_on_map=False, map_only=0
+             show_on_map=-1, map_only=0
              ):
 
         def f(x):

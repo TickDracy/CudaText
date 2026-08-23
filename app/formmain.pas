@@ -140,7 +140,6 @@ type
     procedure HandleOneFrame;
     procedure NotifyFrame1;
     procedure NotifyFrame2;
-    //procedure ModifyFrame1;
   protected
     procedure Execute; override;
   end;
@@ -475,8 +474,10 @@ type
     procedure AppPropsDropFiles(Sender: TObject; const FileNames: array of string);
     procedure AppPropsEndSession(Sender: TObject);
     procedure AppPropsException(Sender: TObject; E: Exception);
+    procedure AppPropsMinimize(Sender: TObject);
     procedure AppPropsModalBegin(Sender: TObject);
     procedure AppPropsQueryEndSession(var Cancel: Boolean);
+    procedure AppPropsRestore(Sender: TObject);
     procedure ButtonCancelClick(Sender: TObject);
     procedure FormActivate(Sender: TObject);
     procedure FormChangeBounds(Sender: TObject);
@@ -738,6 +739,7 @@ type
     FLastFocusedFrame: TComponent;
     FLastTooltipLine: integer;
     FLastAppActivate: QWord;
+    FLastWindowState: TWindowState;
     FLastSaveSessionTick: QWord;
     FLastPyMenuFilter: UnicodeString;
     FLastPyMenuHashOfLines: integer;
@@ -1067,7 +1069,7 @@ type
     function DoDialogMenuLexerChoose(const AFilename: string; ANames: TStringList): integer;
     procedure DoDialogGotoBookmark;
     function DoDialogSaveTabs: boolean;
-    procedure DoDialogLexerProp(an: TecSyntAnalyzer);
+    procedure DoDialogLexerProp(Ed: TATSynEdit);
     procedure DoDialogLexerLib;
     procedure DoDialogLexerMap;
     procedure DoDialogTheme(AThemeUI: boolean);
@@ -1481,6 +1483,31 @@ begin
          //MsgLogConsole('WM_SETTINGCHANGE');
        end;
 
+    // Fix for issue #6418
+    // On Windows, the LCL Application.OnActivate event only fires on
+    // WM_ACTIVATEAPP, which is NOT sent by Windows when the app is restored
+    // from the taskbar via clicking the taskbar icon. WM_ACTIVATE is sent
+    // reliably in that case (with WA_CLICKACTIVE), so we hook it here and
+    // call AppPropsActivate/AppPropsDeactivate manually. The existing 500ms
+    // debounce in DoPyEvent_AppActivate prevents double-firing when LCL
+    // also fires the same event.
+    WM_ACTIVATE:
+      begin
+        if Assigned(PrevWndProc) then
+          Result := CallWindowProc(PrevWndProc, AHWnd, uMsg, WParam, LParam)
+        else
+          Result := Windows.DefWindowProc(AHWnd, uMsg, WParam, LParam);
+
+        if Assigned(fmMain) then
+          case LoWord(wParam) of
+            WA_ACTIVE, WA_CLICKACTIVE:
+              fmMain.AppPropsActivate(nil);
+            WA_INACTIVE:
+              fmMain.AppPropsDeactivate(nil);
+          end;
+        exit;
+      end;
+
      {
      WM_SYSCOLORCHANGE:
        begin
@@ -1542,10 +1569,10 @@ var
 begin
   F:= GetEditorFrame(Ed);
   if F=nil then exit(nil);
-  if Ed=F.Ed1 then
-    Result:= F.Ed2
+  if Ed=F.EdFirst then
+    Result:= F.EdSecond
   else
-    Result:= F.Ed1;
+    Result:= F.EdFirst;
 end;
 
 class function TGroupsHelper.GetEditorFirstSecond(Ed: TATSynEdit; AFirst: boolean): TATSynEdit;
@@ -1555,9 +1582,9 @@ begin
   F:= GetEditorFrame(Ed);
   if F=nil then exit(nil);
   if AFirst then
-    Result:= F.Ed1
+    Result:= F.EdFirst
   else
-    Result:= F.Ed2;
+    Result:= F.EdSecond;
 end;
 
 
@@ -1601,7 +1628,7 @@ begin
   if Pages=nil then exit;
   Data:= Pages.Tabs.GetTabData(Pages.Tabs.TabIndex);
   if Assigned(Data) then
-    Result:= (Data.TabObject as TEditorFrame).Editor;
+    Result:= (Data.TabObject as TEditorFrame).EdCurrent;
 end;
 
 class procedure TGroupsHelper.ForceFrameVisible(Frame: TEditorFrame);
@@ -1980,21 +2007,13 @@ end;
 
 procedure TAppNotifThread.NotifyFrame1;
 begin
-  CurFrame.NotifyAboutChange(CurFrame.Ed1);
+  CurFrame.NotifyAboutChange(CurFrame.EdFirst);
 end;
 
 procedure TAppNotifThread.NotifyFrame2;
 begin
-  CurFrame.NotifyAboutChange(CurFrame.Ed2);
+  CurFrame.NotifyAboutChange(CurFrame.EdSecond);
 end;
-
-{
-procedure TAppNotifThread.ModifyFrame1;
-begin
-  CurFrame.Ed1.Modified:= true;
-  CurFrame.UpdateModified(CurFrame.Ed1);
-end;
-}
 
 procedure TAppNotifThread.HandleOneFrame;
   //
@@ -2075,10 +2094,10 @@ end;
 
 procedure TFrameEditState.Assign(AFrame: TEditorFrame);
 begin
-  Ed1_FileName:= AFrame.Ed1.FileName;
-  Ed2_FileName:= AFrame.Ed2.FileName;
-  Ed1_ModifiedVersion:= AFrame.Ed1.Strings.ModifiedVersion;
-  Ed2_ModifiedVersion:= AFrame.Ed2.Strings.ModifiedVersion;
+  Ed1_FileName:= AFrame.EdFirst.FileName;
+  Ed2_FileName:= AFrame.EdSecond.FileName;
+  Ed1_ModifiedVersion:= AFrame.EdFirst.Strings.ModifiedVersion;
+  Ed2_ModifiedVersion:= AFrame.EdSecond.Strings.ModifiedVersion;
 end;
 
 { TfmMain }
@@ -2394,7 +2413,7 @@ begin
             end;
           TAppFrameKind.Editor:
             begin
-              WrapMode:= Frame.Editor.OptWrapMode;
+              WrapMode:= Frame.EdCurrent.OptWrapMode;
             end;
           else
             exit;
@@ -2499,12 +2518,12 @@ begin
       end;
     StatusbarTag_Enc:
       begin
-        if not Frame.ReadOnly[Frame.Editor] then
+        if not Frame.ReadOnly[Frame.EdCurrent] then
           DoDialogMenuEncodings;
       end;
     StatusbarTag_LineEnds:
       begin
-        if not Frame.ReadOnly[Frame.Editor] then
+        if not Frame.ReadOnly[Frame.EdCurrent] then
           DoDialogMenuEnds;
       end;
     StatusbarTag_Lexer:
@@ -2519,13 +2538,13 @@ begin
     StatusbarTag_SelMode:
       begin
         //don't change property, call command, to support macro-recording
-        Frame.Editor.DoCommand(cCommand_MouseColSelectWithoutKey_Toggle, TATCommandInvoke.Hotkey);
+        Frame.EdCurrent.DoCommand(cCommand_MouseColSelectWithoutKey_Toggle, TATCommandInvoke.Hotkey);
         UpdateStatusbar_RealWork;
       end;
     StatusbarTag_WrapMode:
       begin
         //toggle values: no wrap / wrap at window / wrap at margin
-        with Frame.Editor do
+        with Frame.EdCurrent do
         begin
           if OptWrapMode=High(OptWrapMode) then
             OptWrapMode:= Low(OptWrapMode)
@@ -2585,9 +2604,9 @@ begin
     Frame:= CurrentFrame;
     if Assigned(Frame) then
     begin
-      EditorCaretToView(Frame.Ed1, true, {$ifdef windows}false{$else}true{$endif});
+      EditorCaretToView(Frame.EdFirst, true, {$ifdef windows}false{$else}true{$endif});
       if Frame.Splitted then
-        EditorCaretToView(Frame.Ed2, true, {$ifdef windows}false{$else}true{$endif});
+        EditorCaretToView(Frame.EdSecond, true, {$ifdef windows}false{$else}true{$endif});
     end;
   end;
 
@@ -3063,6 +3082,8 @@ begin
   mnuHelpCheckUpd.Enabled:= UiOps.AllowProgramUpdates;
   AppRunAutocomplete:= @DoAutoComplete_Callback;
 
+  FLastWindowState:= WindowState;
+
   with AppPanels[TAppPanelId.Side] do
   begin
     PanelRoot:= Self.PanelMain;
@@ -3294,9 +3315,9 @@ begin
 
     //on_close are not fired automatically on app exit
     //(because we don't really close tabs on exit), so fire it here
-    DoPyEvent(F.Ed1, TAppPyEvent.OnClose, []);
+    DoPyEvent(F.EdFirst, TAppPyEvent.OnClose, []);
     if not F.EditorsLinked then
-      DoPyEvent(F.Ed2, TAppPyEvent.OnClose, []);
+      DoPyEvent(F.EdSecond, TAppPyEvent.OnClose, []);
   end;
 
   DoPyEvent(nil, TAppPyEvent.OnExit, []);
@@ -3306,20 +3327,19 @@ begin
   DoOps_SaveHistory(
     AppFile_History,
     UiOps.SaveModifiedTabsOnClose,
-    UiOps.SessionSaveOnExit
-    //UiOps.ReopenSession //2025.04: change it to UiOps.SessionSaveOnExit ?
+    true //param ASaveSession=True, because dlg "Save tabs?" always wants to save session on exit
     );
 
   {$ifndef windows}
   {
   WriteLn('UiOps.ReopenSession: ', UiOps.ReopenSession);
-  WriteLn('UiOps.SessionSaveOnExit: ', UiOps.SessionSaveOnExit);
+  WriteLn('UiOps.SessionSaveOnExit: ', UiOps.AutoSaveSession);
   }
   {$endif}
 
   {
   //seems doing DoCloseAllTabs in FormClose is bad idea:
-  //app asks to save modified tabs, even with UiOps.SessionSaveOnExit.
+  //app asks to save modified tabs, even with UiOps.AutoSaveSession.
   AppSessionIsClosing:= true; //to avoid asking "Close pinned tab?"
   DoCloseAllTabs;
   }
@@ -3402,7 +3422,7 @@ begin
   begin
     F:= CurrentFrame;
     if Assigned(F) then
-      F.Editor.Update;
+      F.EdCurrent.Update;
   end;
 
   (*
@@ -3424,7 +3444,7 @@ begin
   begin
     F:= CurrentFrame;
     if Assigned(F) then
-      F.Editor.Update;
+      F.EdCurrent.Update;
   end;
 
   {
@@ -3442,6 +3462,20 @@ begin
   *)
 
   DoPyEvent_AppActivate(TAppPyEvent.OnAppDeactivate);
+
+  // Fix for on_state not firing on minimize on Windows.
+  // On Windows, TApplicationProperties.OnMinimize does NOT fire when the
+  // user clicks the minimize button (it only fires for programmatic
+  // Application.Minimize). OnDeactivate DOES fire on minimize, but it also
+  // fires on alt-tab / clicking another app. IsIconic checks the actual
+  // OS window state, so we can distinguish minimize from focus loss.
+  // Gated to Windows only: on Linux, AppPropsMinimize already handles it
+  // (and would cause a duplicate if we also emitted here).
+  // https://github.com/Alexey-T/CudaText/issues/6417
+  {$ifdef windows}
+  if IsIconic(Handle) then
+    DoPyEvent_AppState(APPSTATE_WINDOW);
+  {$endif}
 end;
 
 procedure TfmMain.AppPropsDropFiles(Sender: TObject;
@@ -3466,6 +3500,16 @@ end;
 procedure TfmMain.AppPropsException(Sender: TObject; E: Exception);
 begin
   AppLogException(E);
+end;
+
+procedure TfmMain.AppPropsMinimize(Sender: TObject);
+begin
+  DoPyEvent_AppState(APPSTATE_WINDOW);
+end;
+
+procedure TfmMain.AppPropsRestore(Sender: TObject);
+begin
+  DoPyEvent_AppState(APPSTATE_WINDOW);
 end;
 
 procedure TfmMain.AppPropsModalBegin(Sender: TObject);
@@ -3499,18 +3543,20 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     F:= Frames[i];
-    DoPyEvent(F.Ed1, TAppPyEvent.OnCloseBefore, []);
+    DoPyEvent(F.EdFirst, TAppPyEvent.OnCloseBefore, []);
     if not F.EditorsLinked then
-      DoPyEvent(F.Ed2, TAppPyEvent.OnCloseBefore, []);
+      DoPyEvent(F.EdSecond, TAppPyEvent.OnCloseBefore, []);
   end;
 
   if GetModifiedCount>0 then
+  begin
     ACanClose:= (
       UiOps.ReopenSession and
-      UiOps.SessionSaveOnExit and
+      UiOps.AutoSaveSession and
       UiOps.HistoryItems[TAppHistoryElement.Text]
       )
-      or DoDialogSaveTabs
+      or DoDialogSaveTabs;
+  end
   else
     ACanClose:= true;
 end;
@@ -3960,7 +4006,7 @@ procedure TfmMain.FormShow(Sender: TObject);
     begin
       Frame:= Frames[0];
       if Frame.IsEmpty then
-        FrameLexerChange(Frame.Ed1);
+        FrameLexerChange(Frame.EdFirst);
     end;
   end;
   //
@@ -3989,7 +4035,7 @@ procedure TfmMain.FormShow(Sender: TObject);
       {$ifdef windows}
       //fix missing on_focus on start, needed for Configure_Toolbar, #5784
       if not FHandledOnFocus then
-        DoPyEvent(Frame.Editor, TAppPyEvent.OnFocus, []);
+        DoPyEvent(Frame.EdFirst, TAppPyEvent.OnFocus, []);
       {$endif}
     end;
   end;
@@ -4037,9 +4083,9 @@ procedure TfmMain.FormShow(Sender: TObject);
     Frame:= CurrentFrame;
     if Assigned(Frame) then
     begin
-      EditorForceUpdateIfWrapped(Frame.Ed1);
+      EditorForceUpdateIfWrapped(Frame.EdFirst);
       if Frame.Splitted then
-        EditorForceUpdateIfWrapped(Frame.Ed2);
+        EditorForceUpdateIfWrapped(Frame.EdSecond);
     end;
   end;
   //
@@ -4143,7 +4189,7 @@ begin
     if FrameCount=1 then
     begin
       Frame:= Frames[0];
-      if Frame.IsEmpty and (Frame.LexerName[Frame.Ed1]='') then
+      if Frame.IsEmpty and (Frame.LexerName[Frame.EdFirst]='') then
         DoApplyNewdocLexer(Frame);
     end;
 
@@ -4182,7 +4228,23 @@ end;
 
 procedure TfmMain.FormWindowStateChange(Sender: TObject);
 begin
-  DoPyEvent_AppState(APPSTATE_WINDOW);
+  //ignore wsMinimized: it was already handled by TApplicationProperties.OnRestore
+  if WindowState in [wsMaximized, wsNormal] then
+  begin
+    // fixing issue #6417
+    // On Linux gtk2/gtk3, restoring from wsMinimized fires BOTH
+    // TApplicationProperties.OnRestore (handled by AppPropsRestore) AND
+    // FormWindowStateChange with WindowState=wsNormal. To avoid emitting
+    // on_state APPSTATE_WINDOW twice (both reporting WND_NORMAL) on
+    // minimize+restore, skip the form-state-change emission when the
+    // previous state was wsMinimized -- the restore event already
+    // covered it.
+    // On Windows, OnWindowStateChange doesn't fire on restore,
+    // so this guard is a no-op there.
+    if FLastWindowState<>wsMinimized then
+      DoPyEvent_AppState(APPSTATE_WINDOW);
+  end;
+  FLastWindowState:= WindowState;
 end;
 
 procedure TfmMain.ShowWelcomeInfo;
@@ -4196,7 +4258,7 @@ begin
     Frame:= Frames[0];
     if Frame.IsEmpty then
     begin
-      Ed:= Frame.Ed1;
+      Ed:= Frame.EdFirst;
       Frame.IsWelcome:= true;
       Frame.TabCaption:= msgWelcomeTabTitle;
       Frame.TabCaptionReason:= TAppTabCaptionReason.UnsavedSpecial;
@@ -4345,8 +4407,8 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     Frame:= Frames[i];
-    DoApplyCenteringOption(Frame, Frame.Ed1);
-    DoApplyCenteringOption(Frame, Frame.Ed2);
+    DoApplyCenteringOption(Frame, Frame.EdFirst);
+    DoApplyCenteringOption(Frame, Frame.EdSecond);
   end;
 end;
 
@@ -4390,7 +4452,7 @@ begin
   if bKeepFrameLexers then
     DoOps_LexersBackupSave;
 
-  DoInstallAddonFromZip(AFileName, AppDir_DataAutocomplete, msg, msg2,
+  DoInstallAddonFromZip(AFileName, msg, msg2,
     Result, AddonType, DirTarget, bNeedRestart, ASilent);
 
   if Result then
@@ -4473,30 +4535,30 @@ begin
       Form.List.Checked[Form.List.Count-1]:= true;
     end;
 
-    case Form.ShowModal of
-      //"Don't save/ Keep in session"
-      mrClose:
+    case Form.ShowModalGetEnum of
+      TAppSaveTabsChoice.Cancel:
+        begin
+          Result:= false;
+        end;
+
+      TAppSaveTabsChoice.DontSaveAtAll:
+        begin
+          Result:= true;
+          UiOps.SaveModifiedTabsOnClose:= false;
+        end;
+
+      TAppSaveTabsChoice.DontSaveKeepInSession:
         begin
           Result:= true;
           //set true, because user can call this dialog via CmdPalette,
           //where he can choose "Don't save" before
           UiOps.SaveModifiedTabsOnClose:= true;
         end;
-      //"Cancel"
-      mrCancel:
-        begin
-          Result:= false;
-        end;
-      //"Don't save"
-      mrNoToAll:
-        begin
-          Result:= true; //like for mrClose
-          UiOps.SaveModifiedTabsOnClose:= false;
-        end;
-      //"Save"
-      mrOk:
+
+      TAppSaveTabsChoice.Save:
         begin
           Result:= true;
+          //save checked frames
           for i:= 0 to Form.List.Count-1 do
             if Form.List.Checked[i] then
             begin
@@ -4505,21 +4567,36 @@ begin
                 exit(false);
             end;
         end;
+
+      else
+        raise Exception.Create('Unknown enum member in DoDialogSaveTabs');
     end;
   finally
     Form.Free
   end;
 end;
 
-procedure TfmMain.DoDialogLexerProp(an: TecSyntAnalyzer);
+procedure TfmMain.DoDialogLexerProp(Ed: TATSynEdit);
+var
+  An: TecSyntAnalyzer;
 begin
-  if DoDialogLexerPropEx(an,
-    EditorOps.OpFontName,
-    EditorOps.OpFontSize) then
+  if Ed.AdapterForHilite=nil then exit;
+  if Ed.AdapterForHilite is TATAdapterEControl then
   begin
-    UpdateStatusbar;
-    UpdateCurrentFrame;
-  end;
+    An:= (Ed.AdapterForHilite as TATAdapterEControl).Lexer;
+    if DoDialogLexerPropEx(An,
+      EditorOps.OpFontName,
+      EditorOps.OpFontSize) then
+    begin
+      UpdateStatusbar;
+      UpdateCurrentFrame;
+    end;
+  end
+  else
+  if Ed.AdapterForHilite is TATLiteLexer then
+    MsgBox(
+      'Currently active lexer is LITE lexer (it has "^" suffix in its name). CudaText don''t have configuration dialog for lite lexers.',
+      MB_OK or MB_ICONWARNING);
 end;
 
 procedure TfmMain.DoDialogLexerLib;
@@ -4561,7 +4638,7 @@ begin
   F:= CurrentFrame;
   if F=nil then exit;
 
-  if DoDialogLexerStylesMap(F.Lexer[F.Editor]) then
+  if DoDialogLexerStylesMap(F.Lexer[F.EdCurrent]) then
     DoApplyLexerStylesMapsToFrames(false);
 end;
 
@@ -4687,10 +4764,10 @@ begin
   for i:= 0 to FrameCount-1 do
     begin
       F:= Frames[i];
-      F.Ed1.DoubleBuffered:= UiOps.DoubleBuffered;
-      F.Ed2.DoubleBuffered:= UiOps.DoubleBuffered;
-      F.Ed1.Font.Size:= EditorOps.OpFontSize;
-      F.Ed2.Font.Size:= EditorOps.OpFontSize;
+      F.EdFirst.DoubleBuffered:= UiOps.DoubleBuffered;
+      F.EdSecond.DoubleBuffered:= UiOps.DoubleBuffered;
+      F.EdFirst.Font.Size:= EditorOps.OpFontSize;
+      F.EdSecond.Font.Size:= EditorOps.OpFontSize;
       if Assigned(F.Viewer) then
       begin
         F.Viewer.DoubleBuffered:= UiOps.DoubleBuffered;
@@ -4930,17 +5007,82 @@ end;
 function TfmMain.DoFileOpen(AFileName, AFileName2: string; APages: TATPages;
   const AOptions: string): TEditorFrame;
 var
-  D: TATTabData;
-  F: TEditorFrame;
   bSilent, bPreviewTab, bEnableHistory, bEnableLoadUndo, bEnableLoadBookmarks,
   bEnableEventPre, bEnableEventOpened, bEnableEventOpenedNone,
   bAllowZip, bAllowPics, bAllowLexerDetect, bAllowDeleted, bDetectedPics,
   bAllowUpdateAddons, bAndActivate: boolean;
+  nAllowNear: TAppNewTabNearCurrent;
+  nOpenMode, nNonTextMode: TAppOpenMode;
+  //
+  procedure InitMainVars;
+  begin
+    bSilent:= SubInString('/silent', AOptions);
+    bPreviewTab:= SubInString('/preview', AOptions);
+    bEnableHistory:= not SubInString('/nohistory', AOptions);
+    bEnableLoadBookmarks:= true;
+    bEnableLoadUndo:= not SubInString('/noloadundo', AOptions);
+    bEnableEventPre:= not SubInString('/noevent', AOptions);
+    bEnableEventOpened:= not SubInString('/noopenedevent', AOptions);
+    bEnableEventOpenedNone:= not SubInString('/nononeevent', AOptions);
+    bAndActivate:= not SubInString('/passive', AOptions);
+    bAllowLexerDetect:= not SubInString('/nolexerdetect', AOptions);
+    bAllowZip:= not SubInString('/nozip', AOptions);
+    bAllowPics:= not SubInString('/nopictures', AOptions);
+    bAllowUpdateAddons:= not SubInString('/noupdateaddons', AOptions);
+    bAllowDeleted:= SubInString('/allowdeleted', AOptions);
+    bDetectedPics:= bAllowPics and IsFilenameListedInExtensionList(AFileName, UiOps.PictureTypes);
+
+    nAllowNear:= TAppNewTabNearCurrent.ByOption;
+    if SubInString('/donear', AOptions) then
+      nAllowNear:= TAppNewTabNearCurrent.Enabled
+    else
+    if SubInString('/nonear', AOptions) then
+      nAllowNear:= TAppNewTabNearCurrent.Disabled;
+
+    if SubInString('/view-text', AOptions) then
+      nOpenMode:= TAppOpenMode.ViewText
+    else
+    if SubInString('/view-binary', AOptions) then
+      nOpenMode:= TAppOpenMode.ViewBinary
+    else
+    if SubInString('/view-hex', AOptions) then
+      nOpenMode:= TAppOpenMode.ViewHex
+    else
+    if SubInString('/view-unicode', AOptions) then
+      nOpenMode:= TAppOpenMode.ViewUnicode
+    else
+    if SubInString('/view-uhex', AOptions) then
+      nOpenMode:= TAppOpenMode.ViewUHex
+    else
+      nOpenMode:= TAppOpenMode.Editor;
+
+    if SubInString('/nontext-view-text', AOptions) then
+      nNonTextMode:= TAppOpenMode.ViewText
+    else
+    if SubInString('/nontext-view-binary', AOptions) then
+      nNonTextMode:= TAppOpenMode.ViewBinary
+    else
+    if SubInString('/nontext-view-hex', AOptions) then
+      nNonTextMode:= TAppOpenMode.ViewHex
+    else
+    if SubInString('/nontext-view-unicode', AOptions) then
+      nNonTextMode:= TAppOpenMode.ViewUnicode
+    else
+    if SubInString('/nontext-view-uhex', AOptions) then
+      nNonTextMode:= TAppOpenMode.ViewUHex
+    else
+    if SubInString('/nontext-cancel', AOptions) then
+      nNonTextMode:= TAppOpenMode.None
+    else
+      nNonTextMode:= TAppOpenMode.Editor;
+  end;
+  //
+var
+  D: TATTabData;
+  F: TEditorFrame;
+  CurGroups: TATGroups;
   bFileExists, bFileExists2: boolean;
   bFileTooBig, bFileTooBig2: boolean;
-  AllowNear: TAppNewTabNearCurrent;
-  OpenMode, NonTextMode: TAppOpenMode;
-  CurGroups: TATGroups;
   NBinaryChar: byte;
   //tick: QWord;
   //msg: string;
@@ -4949,9 +5091,25 @@ begin
   AppDir_LastInstalledAddon:= '';
   if Application.Terminated then exit;
   if IsTooManyTabsOpened then exit;
+
+  InitMainVars;
+
+  //handle zip files _before_ checking of re-entering
+  if bAllowZip and (nOpenMode=TAppOpenMode.Editor) and (ExtractFileExt(AFileName)='.zip') then
+  begin
+    if DoFileInstallZip(AFileName, AppDir_LastInstalledAddon, bSilent, bAllowUpdateAddons) then
+      Result:= CurrentFrame;
+    exit
+  end;
+
+  //prevent re-entering in DoFileOpen
+  if AppOpeningFile then
+  begin
+    MsgLogConsole('NOTE: re-entering to DoFileOpen, strange, tell the developer what you did');
+    exit;
+  end;
   AppOpeningFile:= true;
 
- try
   bFileExists:= (AFileName<>'') and FileExists(AFileName);
   bFileExists2:= (AFileName2<>'') and FileExists(AFileName2);
   bFileTooBig:= IsFileTooBigForOpening(AFileName);
@@ -4969,393 +5127,325 @@ begin
 
   CurGroups:= CurrentGroups;
 
-  bSilent:= SubInString('/silent', AOptions);
-  bPreviewTab:= SubInString('/preview', AOptions);
-  bEnableHistory:= not SubInString('/nohistory', AOptions);
-  bEnableLoadBookmarks:= true;
-  bEnableLoadUndo:= not SubInString('/noloadundo', AOptions);
-  bEnableEventPre:= not SubInString('/noevent', AOptions);
-  bEnableEventOpened:= not SubInString('/noopenedevent', AOptions);
-  bEnableEventOpenedNone:= not SubInString('/nononeevent', AOptions);
-  bAndActivate:= not SubInString('/passive', AOptions);
-  bAllowLexerDetect:= not SubInString('/nolexerdetect', AOptions);
-  bAllowZip:= not SubInString('/nozip', AOptions);
-  bAllowPics:= not SubInString('/nopictures', AOptions);
-  bAllowUpdateAddons:= not SubInString('/noupdateaddons', AOptions);
-  bAllowDeleted:= SubInString('/allowdeleted', AOptions);
-
-  AllowNear:= TAppNewTabNearCurrent.ByOption;
-  if SubInString('/donear', AOptions) then
-    AllowNear:= TAppNewTabNearCurrent.Enabled
-  else
-  if SubInString('/nonear', AOptions) then
-    AllowNear:= TAppNewTabNearCurrent.Disabled;
-
-  if SubInString('/view-text', AOptions) then
-    OpenMode:= TAppOpenMode.ViewText
-  else
-  if SubInString('/view-binary', AOptions) then
-    OpenMode:= TAppOpenMode.ViewBinary
-  else
-  if SubInString('/view-hex', AOptions) then
-    OpenMode:= TAppOpenMode.ViewHex
-  else
-  if SubInString('/view-unicode', AOptions) then
-    OpenMode:= TAppOpenMode.ViewUnicode
-  else
-  if SubInString('/view-uhex', AOptions) then
-    OpenMode:= TAppOpenMode.ViewUHex
-  else
-    OpenMode:= TAppOpenMode.Editor;
-
-  if SubInString('/nontext-view-text', AOptions) then
-    NonTextMode:= TAppOpenMode.ViewText
-  else
-  if SubInString('/nontext-view-binary', AOptions) then
-    NonTextMode:= TAppOpenMode.ViewBinary
-  else
-  if SubInString('/nontext-view-hex', AOptions) then
-    NonTextMode:= TAppOpenMode.ViewHex
-  else
-  if SubInString('/nontext-view-unicode', AOptions) then
-    NonTextMode:= TAppOpenMode.ViewUnicode
-  else
-  if SubInString('/nontext-view-uhex', AOptions) then
-    NonTextMode:= TAppOpenMode.ViewUHex
-  else
-  if SubInString('/nontext-cancel', AOptions) then
-    NonTextMode:= TAppOpenMode.None
-  else
-    NonTextMode:= TAppOpenMode.Editor;
-
   if APages=nil then
     APages:= CurGroups.PagesCurrent;
 
-  if (AFileName='') and (not bFileExists2) then
-  begin
-    D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), bAndActivate, AllowNear);
-    if not Assigned(D) then
+  try
+    if (AFileName='') and (not bFileExists2) then
     begin
-      D:= GroupsMain.Pages1.Tabs.GetTabData(0);
-      DoClearSingleFirstTab;
-    end;
-    Result:= D.TabObject as TEditorFrame;
-    Result.SetFocus;
-    if AFileName2='' then
-      Exit
-    else
-      Random(1);
-  end;
-
-  //expand "./name"
-  //note: ExpandFileNameUTF8 has bug in Laz 1.9-
-  if AFileName<>'' then
-  begin
-    AFileName:= AppExpandFileName(AFileName);
-    if not bAllowDeleted and not bFileExists then
-    begin
-      MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName), MB_OK or MB_ICONERROR);
-      Exit
-    end;
-  end;
-
-  if AFileName2<>'' then
-  begin
-    AFileName2:= AppExpandFileName(AFileName2);
-    if not bAllowDeleted and not bFileExists2 then
-    begin
-      MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName2), MB_OK or MB_ICONERROR);
-      Exit
-    end;
-  end;
-
-  if (AFileName<>'') and not bAllowDeleted and not FileIsReadable(AFileName) then
-  begin
-    MsgBox(msgCannotOpenFile+#10+AFileName+#10#10+msgCannotOpenNoReadPermissions, MB_OK or MB_ICONERROR);
-    exit;
-  end;
-
-  if (AFileName2<>'') and not bAllowDeleted and not FileIsReadable(AFileName2) then
-  begin
-    AFileName2:= '';
-  end;
-
-  if OpenMode=TAppOpenMode.Editor then
-  begin
-    //zip files
-    if bAllowZip and (ExtractFileExt(AFileName)='.zip') then
-    begin
-      if DoFileInstallZip(AFileName, AppDir_LastInstalledAddon, bSilent, bAllowUpdateAddons) then
-        Result:= CurrentFrame;
-      exit
-    end;
-
-    {
-    //session files
-    //2025.03: don't open as session anymore
-    if ExtractFileExt(AFileName)='.cuda-session' then
-    begin
-      DoOps_LoadSession(AFileName, true);
-      Result:= CurrentFrame;
-      exit
-    end;
-    }
-
-    //py event
-    if bEnableEventPre then
-    begin
-      if DoPyEvent(CurrentEditor, TAppPyEvent.OnOpenBefore, [AppVariant(AFileName)]).Val = TAppPyEventValue.False then exit;
-    end;
-
-    bDetectedPics:= bAllowPics and IsFilenameListedInExtensionList(AFileName, UiOps.PictureTypes);
-
-    //non-text option
-    if not bFileTooBig then
-    if not bDetectedPics then
-    if not AppSessionIsLoading then
-    if UiOps.NonTextFiles<>1 then
-      if bFileExists and not AppIsFileContentText(
-               AFileName,
-               UiOps.NonTextFilesBufferKb,
-               ATEditorOptions.DetectUTF16BufferWords,
-               NBinaryChar
-               ) then
+      D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), bAndActivate, nAllowNear);
+      if not Assigned(D) then
       begin
-        if NonTextMode=TAppOpenMode.None then
-          Exit;
-        if NonTextMode<>TAppOpenMode.Editor then
-          OpenMode:= NonTextMode
-        else
-        case UiOps.NonTextFiles of
-          0:
-            case DoDialogConfirmBinaryFile(AFileName, bFileTooBig, NBinaryChar) of
-              TAppConfirmBinary.ViewerText:
-                OpenMode:= TAppOpenMode.ViewText;
-              TAppConfirmBinary.ViewerBinary:
-                OpenMode:= TAppOpenMode.ViewBinary;
-              TAppConfirmBinary.ViewerHex:
-                OpenMode:= TAppOpenMode.ViewHex;
-              TAppConfirmBinary.ViewerUnicode:
-                OpenMode:= TAppOpenMode.ViewUnicode;
-              TAppConfirmBinary.ViewerUHex:
-                OpenMode:= TAppOpenMode.ViewUHex;
-              TAppConfirmBinary.Cancel:
-                Exit;
-            end;
-          2:
+        D:= GroupsMain.Pages1.Tabs.GetTabData(0);
+        DoClearSingleFirstTab;
+      end;
+      Result:= D.TabObject as TEditorFrame;
+      Result.SetFocus;
+      if AFileName2='' then
+        Exit
+      else
+        Random(1);
+    end;
+
+    //expand "./name"
+    //note: ExpandFileNameUTF8 has bug in Laz 1.9-
+    if AFileName<>'' then
+    begin
+      AFileName:= AppExpandFileName(AFileName);
+      if not bAllowDeleted and not bFileExists then
+      begin
+        MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName), MB_OK or MB_ICONERROR);
+        Exit
+      end;
+    end;
+
+    if AFileName2<>'' then
+    begin
+      AFileName2:= AppExpandFileName(AFileName2);
+      if not bAllowDeleted and not bFileExists2 then
+      begin
+        MsgBox(msgCannotFindFile+#10+AppCollapseHomeDirInFilename(AFileName2), MB_OK or MB_ICONERROR);
+        Exit
+      end;
+    end;
+
+    if (AFileName<>'') and not bAllowDeleted and not FileIsReadable(AFileName) then
+    begin
+      MsgBox(msgCannotOpenFile+#10+AFileName+#10#10+msgCannotOpenNoReadPermissions, MB_OK or MB_ICONERROR);
+      exit;
+    end;
+
+    if (AFileName2<>'') and not bAllowDeleted and not FileIsReadable(AFileName2) then
+    begin
+      AFileName2:= '';
+    end;
+
+    if nOpenMode=TAppOpenMode.Editor then
+    begin
+      {
+      //session files
+      //2025.03: don't open as session anymore
+      if ExtractFileExt(AFileName)='.cuda-session' then
+      begin
+        DoOps_LoadSession(AFileName, true);
+        Result:= CurrentFrame;
+        exit
+      end;
+      }
+
+      //py event
+      if bEnableEventPre then
+      begin
+        if DoPyEvent(CurrentEditor, TAppPyEvent.OnOpenBefore, [AppVariant(AFileName)]).Val = TAppPyEventValue.False then exit;
+      end;
+
+      //non-text option
+      if not bFileTooBig then
+      if not bDetectedPics then
+      if not AppSessionIsLoading then
+      if UiOps.NonTextFiles<>1 then
+        if bFileExists and not AppIsFileContentText(
+                 AFileName,
+                 UiOps.NonTextFilesBufferKb,
+                 ATEditorOptions.DetectUTF16BufferWords,
+                 NBinaryChar
+                 ) then
+        begin
+          if nNonTextMode=TAppOpenMode.None then
             Exit;
-          3:
-            OpenMode:= TAppOpenMode.ViewBinary;
-          4:
-            OpenMode:= TAppOpenMode.ViewHex;
+          if nNonTextMode<>TAppOpenMode.Editor then
+            nOpenMode:= nNonTextMode
           else
+          case UiOps.NonTextFiles of
+            0:
+              case DoDialogConfirmBinaryFile(AFileName, bFileTooBig, NBinaryChar) of
+                TAppConfirmBinary.ViewerText:
+                  nOpenMode:= TAppOpenMode.ViewText;
+                TAppConfirmBinary.ViewerBinary:
+                  nOpenMode:= TAppOpenMode.ViewBinary;
+                TAppConfirmBinary.ViewerHex:
+                  nOpenMode:= TAppOpenMode.ViewHex;
+                TAppConfirmBinary.ViewerUnicode:
+                  nOpenMode:= TAppOpenMode.ViewUnicode;
+                TAppConfirmBinary.ViewerUHex:
+                  nOpenMode:= TAppOpenMode.ViewUHex;
+                TAppConfirmBinary.Cancel:
+                  Exit;
+              end;
+            2:
+              Exit;
+            3:
+              nOpenMode:= TAppOpenMode.ViewBinary;
+            4:
+              nOpenMode:= TAppOpenMode.ViewHex;
+            else
+              Exit;
+          end;
+        end;
+
+      //too big size?
+      if (nOpenMode=TAppOpenMode.Editor) and bFileTooBig then
+      begin
+        case DoDialogConfirmBinaryFile(AFileName, bFileTooBig, 0) of
+          TAppConfirmBinary.ViewerText:
+            nOpenMode:= TAppOpenMode.ViewText;
+          TAppConfirmBinary.ViewerBinary:
+            nOpenMode:= TAppOpenMode.ViewBinary;
+          TAppConfirmBinary.ViewerHex:
+            nOpenMode:= TAppOpenMode.ViewHex;
+          TAppConfirmBinary.ViewerUnicode:
+            nOpenMode:= TAppOpenMode.ViewUnicode;
+          TAppConfirmBinary.ViewerUHex:
+            nOpenMode:= TAppOpenMode.ViewUHex;
+          TAppConfirmBinary.Cancel:
             Exit;
         end;
       end;
+    end; //not binary
 
-    //too big size?
-    if (OpenMode=TAppOpenMode.Editor) and bFileTooBig then
-    begin
-      case DoDialogConfirmBinaryFile(AFileName, bFileTooBig, 0) of
-        TAppConfirmBinary.ViewerText:
-          OpenMode:= TAppOpenMode.ViewText;
-        TAppConfirmBinary.ViewerBinary:
-          OpenMode:= TAppOpenMode.ViewBinary;
-        TAppConfirmBinary.ViewerHex:
-          OpenMode:= TAppOpenMode.ViewHex;
-        TAppConfirmBinary.ViewerUnicode:
-          OpenMode:= TAppOpenMode.ViewUnicode;
-        TAppConfirmBinary.ViewerUHex:
-          OpenMode:= TAppOpenMode.ViewUHex;
-        TAppConfirmBinary.Cancel:
-          Exit;
-      end;
-    end;
-  end; //not binary
-
-  //file already opened? activate its frame
-  if AFileName<>'' then
-    F:= FindFrameOfFilename(AFileName)
-  else
-    F:= nil;
-  if F=nil then
-    if AFileName2<>'' then
-      F:= FindFrameOfFilename(AFileName2);
-  if Assigned(F) then
-  begin
-    //don't work, if need to open 2 files
-    if AFileName2<>'' then
-    begin
-      if not SameFileName(F.FileName, AFileName) then exit;
-      if not SameFileName(F.FileName2, AFileName2) then exit;
-    end;
-
-    SetFrame(F);
-    Result:= F;
-    Result.SetFocus;
-    UpdateStatusbar;
-    UpdateTreeByTimer;
-    Exit
-  end;
-
-  //get preview-tab, create it if not yet opened
-  if bPreviewTab then
-  begin
-    Result:= FindFrameOfPreviewTab;
-    if Result=nil then
-    begin
-      APages:= GroupsMain.Pages1; //open preview tab in 1st group
-      if UiOps.TabsDisabled then
-        D:= APages.Tabs.GetTabData(0)
-      else
-        D:= CreateTab(APages, AFileName, 'pre', true, TAppNewTabNearCurrent.Disabled);
-      if not Assigned(D) then exit;
-      UpdateTabPreviewStyle(D, true);
-      Result:= D.TabObject as TEditorFrame;
-    end;
-
-    if bAndActivate then
-    begin
-      SetFrame(Result);
-      DoFocusFrame(Result);
-    end;
-
-    if bEnableHistory then
-    begin
-      Result.DoSaveHistory(Result.Ed1);
-      if not Result.EditorsLinked then
-        Result.DoSaveHistory(Result.Ed2);
-    end;
-
-    //we load file into existing editor, so clear bookmarks/markers
-    Result.Ed1.BookmarkDeleteAll;
-    Result.Ed2.BookmarkDeleteAll;
-    Result.Ed1.MarkerClearAll;
-    Result.Ed2.MarkerClearAll;
-    Result.Ed1.AttribClearAll;
-    Result.Ed2.AttribClearAll;
-
-    Result.DoFileOpen(AFileName, AFileName2,
-      bEnableHistory,
-      bEnableLoadBookmarks,
-      bAllowLexerDetect,
-      true,
-      bEnableLoadUndo,
-      bAllowDeleted,
-      OpenMode);
-    MsgStatusFileOpened(AFileName, AFileName2);
-
-    if bEnableEventOpened then
-    begin
-      DoPyEvent_Open(Result.Ed1);
-    end;
-
-    exit;
-  end;
-
-  //is current frame empty? use it
-  if APages=CurGroups.PagesCurrent then
-  begin
-    F:= CurrentFrame;
+    //file already opened? activate its frame
+    if AFileName<>'' then
+      F:= FindFrameOfFilename(AFileName)
+    else
+      F:= nil;
+    if F=nil then
+      if AFileName2<>'' then
+        F:= FindFrameOfFilename(AFileName2);
     if Assigned(F) then
-    if F.IsEmpty then
     begin
-      //tick:= GetTickCount64;
-      F.DoFileOpen(AFileName, AFileName2,
+      //don't work, if need to open 2 files
+      if AFileName2<>'' then
+      begin
+        if not SameFileName(F.FileName, AFileName) then exit;
+        if not SameFileName(F.FileName2, AFileName2) then exit;
+      end;
+
+      SetFrame(F);
+      Result:= F;
+      Result.SetFocus;
+      UpdateStatusbar;
+      UpdateTreeByTimer;
+      Exit
+    end;
+
+    //get preview-tab, create it if not yet opened
+    if bPreviewTab then
+    begin
+      Result:= FindFrameOfPreviewTab;
+      if Result=nil then
+      begin
+        APages:= GroupsMain.Pages1; //open preview tab in 1st group
+        if UiOps.TabsDisabled then
+          D:= APages.Tabs.GetTabData(0)
+        else
+          D:= CreateTab(APages, AFileName, 'pre', true, TAppNewTabNearCurrent.Disabled);
+        if not Assigned(D) then exit;
+        UpdateTabPreviewStyle(D, true);
+        Result:= D.TabObject as TEditorFrame;
+      end;
+
+      if bAndActivate then
+      begin
+        SetFrame(Result);
+        DoFocusFrame(Result);
+      end;
+
+      if bEnableHistory then
+      begin
+        Result.DoSaveHistory(Result.EdFirst);
+        if not Result.EditorsLinked then
+          Result.DoSaveHistory(Result.EdSecond);
+      end;
+
+      //we load file into existing editor, so clear bookmarks/markers
+      Result.EdFirst.BookmarkDeleteAll;
+      Result.EdSecond.BookmarkDeleteAll;
+      Result.EdFirst.MarkerClearAll;
+      Result.EdSecond.MarkerClearAll;
+      Result.EdFirst.AttribClearAll;
+      Result.EdSecond.AttribClearAll;
+
+      Result.DoFileOpen(AFileName, AFileName2,
         bEnableHistory,
         bEnableLoadBookmarks,
         bAllowLexerDetect,
         true,
         bEnableLoadUndo,
         bAllowDeleted,
-        OpenMode);
-      Result:= F;
-      //tick:= (GetTickCount64-tick) div 1000;
-
-      UpdateStatusbar;
-      UpdateFindDialogEnabled(F);
-      //if tick>2 then
-      //  msg:= msg+' ('+IntToStr(tick)+'s)';
+        nOpenMode);
       MsgStatusFileOpened(AFileName, AFileName2);
 
       if bEnableEventOpened then
-        DoPyEvent_Open(F.Ed1);
+      begin
+        DoPyEvent_Open(Result.EdFirst);
+      end;
 
-      if bEnableEventOpenedNone and IsFilenameForLexerDetecter(AFileName) then
-        if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.Ed1]='') then
+      exit;
+    end;
+
+    //is current frame empty? use it
+    if APages=CurGroups.PagesCurrent then
+    begin
+      F:= CurrentFrame;
+      if Assigned(F) then
+      if F.IsEmpty then
+      begin
+        //tick:= GetTickCount64;
+        F.DoFileOpen(AFileName, AFileName2,
+          bEnableHistory,
+          bEnableLoadBookmarks,
+          bAllowLexerDetect,
+          true,
+          bEnableLoadUndo,
+          bAllowDeleted,
+          nOpenMode);
+        Result:= F;
+        //tick:= (GetTickCount64-tick) div 1000;
+
+        UpdateStatusbar;
+        UpdateFindDialogEnabled(F);
+        //if tick>2 then
+        //  msg:= msg+' ('+IntToStr(tick)+'s)';
+        MsgStatusFileOpened(AFileName, AFileName2);
+
+        if bEnableEventOpened then
+          DoPyEvent_Open(F.EdFirst);
+
+        if bEnableEventOpenedNone and IsFilenameForLexerDetecter(AFileName) then
+          if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.EdFirst]='') then
+          begin
+            DoPyEvent_OpenNone(F.EdFirst);
+            UpdateStatusbar;
+          end;
+
+        if AFileName2<>'' then
         begin
-          DoPyEvent_OpenNone(F.Ed1);
+          if bEnableEventOpened then
+            DoPyEvent_Open(F.EdSecond);
+
+          if bEnableEventOpenedNone and IsFilenameForLexerDetecter(AFileName2) then
+            if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.EdSecond]='') then
+              DoPyEvent_OpenNone(F.EdSecond);
+
           UpdateStatusbar;
         end;
 
-      if AFileName2<>'' then
-      begin
-        if bEnableEventOpened then
-          DoPyEvent_Open(F.Ed2);
+        //for _lite_ lexer, update code-tree (for _normal_ lexer it will run on parsing-done)
+        if F.EdFirst.AdapterForHilite is TATLiteLexer then
+          UpdateTreeByTimer;
 
-        if bEnableEventOpenedNone and IsFilenameForLexerDetecter(AFileName2) then
-          if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.Ed2]='') then
-            DoPyEvent_OpenNone(F.Ed2);
-
-        UpdateStatusbar;
+        Exit
       end;
-
-      //for _lite_ lexer, update code-tree (for _normal_ lexer it will run on parsing-done)
-      if F.Ed1.AdapterForHilite is TATLiteLexer then
-        UpdateTreeByTimer;
-
-      Exit
     end;
+
+    //did not find frame to reuse, create new frame
+    D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), false{AndActivate}, nAllowNear);
+    if not Assigned(D) then
+    begin
+      D:= GroupsMain.Pages1.Tabs.GetTabData(0);
+      DoClearSingleFirstTab;
+    end;
+    F:= D.TabObject as TEditorFrame;
+
+    F.DoFileOpen(AFileName, AFileName2,
+      bEnableHistory,
+      bEnableLoadBookmarks,
+      bAllowLexerDetect,
+      true,
+      bEnableLoadUndo,
+      bAllowDeleted,
+      nOpenMode);
+    Result:= F;
+
+    //use AndActivate=false in CreateTab() and focus here manually,
+    //to avoid setting None-lexer + applying lexer-specific config for it; issue #5320
+    if bAndActivate then
+    begin
+      SetFrame(Result);
+      DoFocusFrame(Result);
+    end;
+
+    UpdateStatusbar;
+    UpdateFindDialogEnabled(F);
+    MsgStatusFileOpened(AFileName, AFileName2);
+
+    if bEnableEventOpened then
+      DoPyEvent_Open(F.EdFirst);
+
+    if bEnableEventOpenedNone then
+      if IsFilenameForLexerDetecter(AFileName) then
+        if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.EdFirst]='') then
+          DoPyEvent_OpenNone(F.EdFirst);
+
+    if bEnableEventOpened then
+      if AFileName2<>'' then
+        DoPyEvent_Open(F.EdSecond);
+
+    if bAndActivate then
+      DoFocusFrame(Result);
+  finally
+    AppOpeningFile:= false;
   end;
-
-  //did not find frame to reuse, create new frame
-  D:= CreateTab(APages, AFileName, ExtractFileName(AFileName), false{AndActivate}, AllowNear);
-  if not Assigned(D) then
-  begin
-    D:= GroupsMain.Pages1.Tabs.GetTabData(0);
-    DoClearSingleFirstTab;
-  end;
-  F:= D.TabObject as TEditorFrame;
-
-  F.DoFileOpen(AFileName, AFileName2,
-    bEnableHistory,
-    bEnableLoadBookmarks,
-    bAllowLexerDetect,
-    true,
-    bEnableLoadUndo,
-    bAllowDeleted,
-    OpenMode);
-  Result:= F;
-
-  //use AndActivate=false in CreateTab() and focus here manually,
-  //to avoid setting None-lexer + applying lexer-specific config for it; issue #5320
-  if bAndActivate then
-  begin
-    SetFrame(Result);
-    DoFocusFrame(Result);
-  end;
-
-  UpdateStatusbar;
-  UpdateFindDialogEnabled(F);
-  MsgStatusFileOpened(AFileName, AFileName2);
-
-  if bEnableEventOpened then
-    DoPyEvent_Open(F.Ed1);
-
-  if bEnableEventOpenedNone then
-    if IsFilenameForLexerDetecter(AFileName) then
-      if (F.FrameKind=TAppFrameKind.Editor) and (F.LexerName[F.Ed1]='') then
-        DoPyEvent_OpenNone(F.Ed1);
-
-  if bEnableEventOpened then
-    if AFileName2<>'' then
-      DoPyEvent_Open(F.Ed2);
-
-  if bAndActivate then
-    DoFocusFrame(Result);
- finally
-   AppOpeningFile:= false;
- end;
 end;
 
 
@@ -5496,7 +5586,7 @@ var
   Props: TDlgCommandsProps;
 begin
   F:= CurrentFrame;
-  Ed:= F.Editor;
+  Ed:= F.EdCurrent;
 
   TKeymapHelperMain.UpdateDynamic(TAppCommandCategory.Lexer);
   TKeymapHelperMain.UpdateDynamic(TAppCommandCategory.OpenedFile);
@@ -5548,8 +5638,8 @@ begin
   F:= CurrentFrame;
   if F=nil then exit;
 
-  AProps.LexerName:= F.LexerName[F.Editor];
-  NCmd:= DoDialogCommands_Custom(F.Editor, AProps);
+  AProps.LexerName:= F.LexerName[F.EdCurrent];
+  NCmd:= DoDialogCommands_Custom(F.EdCurrent, AProps);
   if NCmd<=0 then exit;
   Category:= TPluginHelper.CommandCategory(NCmd);
 
@@ -5681,7 +5771,7 @@ begin
   begin
     Frame.GotoInput:= fmGoto.edInput.Text;
     Str:= UTF8Encode(Frame.GotoInput);
-    if DoPyEvent(Frame.Editor, TAppPyEvent.OnGotoEnter, [AppVariant(Str)]).Val = TAppPyEventValue.False then exit;
+    if DoPyEvent(Frame.EdCurrent, TAppPyEvent.OnGotoEnter, [AppVariant(Str)]).Val = TAppPyEventValue.False then exit;
     DoGotoFromInput(Frame, Str);
   end;
 end;
@@ -5738,7 +5828,7 @@ begin
     end;
     TAppFrameKind.Editor:
     begin
-      if EditorGotoFromString(Frame.Editor, AInput) then
+      if EditorGotoFromString(Frame.EdCurrent, AInput) then
         MsgStatus('')
       else
         MsgStatus(msgStatusBadLineNum);
@@ -5799,7 +5889,7 @@ var
   const
     cMaxLen = 150;
   begin
-    Ed:= Frame.Editor;
+    Ed:= Frame.EdCurrent;
     St:= Ed.Strings;
     for i:= 0 to Ed.Strings.Bookmarks.Count-1 do
     begin
@@ -5835,7 +5925,7 @@ var
   CurLineIndex, SelIndex, i: integer;
 begin
   CurFrame:= CurrentFrame;
-  CurLineIndex:= CurFrame.Editor.Carets[0].PosY;
+  CurLineIndex:= CurFrame.EdCurrent.Carets[0].PosY;
   SelIndex:= 0;
 
   with TIniFile.Create(AppFile_Language) do
@@ -6207,7 +6297,7 @@ begin
   else
     SName:= '';
 
-  F.LexerName[F.Editor]:= SName;
+  F.LexerName[F.EdCurrent]:= SName;
 
   //if some lexer selected, OnParseDone will update the tree
   //if (none) lexer selected, update tree manually
@@ -6505,7 +6595,7 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     F:= Frames[i];
-    if F.Editor.Modified then
+    if F.EdCurrent.Modified then
       if not F.DoFileSave(false, true) then
         Result:= false;
   end;
@@ -6618,9 +6708,9 @@ begin
     for i:= 0 to ListNoSave.Count-1 do
     begin
       F:= TEditorFrame(ListNoSave[i]);
-      F.Ed1.Modified:= false;
+      F.EdFirst.Modified:= false;
       if not F.EditorsLinked then
-        F.Ed2.Modified:= false;
+        F.EdSecond.Modified:= false;
     end;
   finally
     FreeAndNil(ListNoSave);
@@ -6665,8 +6755,8 @@ begin
        msgConfirmCloseAndDeleteFile+#10+AppCollapseHomeDirInFilename(fn),
        MB_OKCANCEL or MB_ICONWARNING)=ID_OK then
   begin
-    if Frame.Ed1.Modified then
-      Frame.Ed1.Modified:= false;
+    if Frame.EdFirst.Modified then
+      Frame.EdFirst.Modified:= false;
 
     TempPages:= Frame.GetTabPages;
     if not Assigned(TempPages) then exit;
@@ -6704,7 +6794,7 @@ begin
   //call this for empty NewdocLexer too: to apply lexer-specific config for none-lexer
   if Assigned(F) then
   begin
-    Ed:= F.Ed1;
+    Ed:= F.EdFirst;
     F.LexerName[Ed]:= UiOps.NewdocLexer;
 
     if UiOps.NewdocLexer<>'' then
@@ -6915,8 +7005,8 @@ begin
   for i:= 0 to FrameCount-1 do
     with Frames[i] do
     begin
-      Ed1.OptGutterVisible:= AValue;
-      Ed2.OptGutterVisible:= AValue;
+      EdFirst.OptGutterVisible:= AValue;
+      EdSecond.OptGutterVisible:= AValue;
     end;
 end;
 
@@ -6952,8 +7042,8 @@ begin
 
     if AHideAll then
     begin
-      FullScreen_ForDistractionFree(F.Ed1);
-      FullScreen_ForDistractionFree(F.Ed2);
+      FullScreen_ForDistractionFree(F.EdFirst);
+      FullScreen_ForDistractionFree(F.EdSecond);
     end;
 
     if AHideAll or (Pos('t', UiOps.FullScreen)>0) then ShowToolbar:= false;
@@ -6973,8 +7063,8 @@ begin
     ShowSideBar:= FOrigShowSideBar;
     ShowTabsMain:= FOrigShowTabs;
 
-    FullScreen_Restore(F.Ed1);
-    FullScreen_Restore(F.Ed2);
+    FullScreen_Restore(F.EdFirst);
+    FullScreen_Restore(F.EdSecond);
 
     DoApplyGutterVisible(EditorOps.OpGutterShow);
   end;
@@ -7054,8 +7144,8 @@ var
 begin
   F:= DoFileOpen('', '');
   if F=nil then exit;
-  F.Ed1.Strings.LoadFromFile(fn, []);
-  F.DoLexerFromFilename(F.Ed1, fn);
+  F.EdFirst.Strings.LoadFromFile(fn, []);
+  F.DoLexerFromFilename(F.EdFirst, fn);
   UpdateFrameEx(F, true);
   UpdateStatusbar;
 end;
@@ -7146,9 +7236,9 @@ begin
   begin
     Frame:= Frames[i];
     if Frame=CurFrame then Continue;
-    if Frame.Editor.ActivationTime>Time then
+    if Frame.EdCurrent.ActivationTime>Time then
     begin
-      Time:= Frame.Editor.ActivationTime;
+      Time:= Frame.EdCurrent.ActivationTime;
       NewFrame:= Frame;
     end;
   end;
@@ -7221,7 +7311,7 @@ var
 begin
   F:= DoFileOpen(AppFile_OptionsDefault, '');
   if Assigned(F) then
-    F.ReadOnly[F.Ed1]:= true;
+    F.ReadOnly[F.EdFirst]:= true;
 end;
 
 procedure TfmMain.DoOps_OpenFile_User;
@@ -7255,8 +7345,8 @@ begin
   F:= DoFileOpen(NameDef, NameUser);
   if Assigned(F) then
   begin
-    F.ReadOnly[F.Ed1]:= true;
-    F.ReadOnly[F.Ed2]:= false;
+    F.ReadOnly[F.EdFirst]:= true;
+    F.ReadOnly[F.EdSecond]:= false;
   end
   else
     MsgStatus(msgCannotOpenFile+' default.json/user.json');
@@ -7270,7 +7360,7 @@ begin
   F:= CurrentFrame;
   if F=nil then exit;
 
-  CurLexer:= F.LexerName[F.Editor];
+  CurLexer:= F.LexerName[F.EdCurrent];
 
   fn:= AppFile_LexerSpecificConfig(CurLexer, false);
   fn_def:= AppFile_LexerSpecificConfig(CurLexer, true);
@@ -7326,7 +7416,7 @@ begin
     F:= Frames[0];
 
   //check allowed lexers
-  CurLexer:= F.LexerName[F.Editor];
+  CurLexer:= F.LexerName[F.EdCurrent];
   if not IsLexerListed(CurLexer, SLexers) then
   begin
     MsgStatus(msgStatusCommandOnlyForLexers+' '+SLexers);
@@ -7357,7 +7447,7 @@ begin
   begin
     if SCallback<>'' then
     begin
-      F.Editor.CommandLog.Add(cmd_PluginRun, TATCommandInvoke.MenuAPI, SCallback+SCaption);
+      F.EdCurrent.CommandLog.Add(cmd_PluginRun, TATCommandInvoke.MenuAPI, SCallback+SCaption);
 
       //click of MainMenu must also record macro command
       if F.MacroRecord then
@@ -7366,11 +7456,11 @@ begin
 
       DoPyCallbackFromAPI(SCallback, [], []);
       if not PyEditorMaybeDeleted then
-        F.Editor.CommandLog.Add(cmd_PluginEnd, TATCommandInvoke.MenuAPI, SCallback+SCaption);
+        F.EdCurrent.CommandLog.Add(cmd_PluginEnd, TATCommandInvoke.MenuAPI, SCallback+SCaption);
     end;
   end
   else
-    F.Editor.DoCommand(NCommand, TATCommandInvoke.MenuMain);
+    F.EdCurrent.DoCommand(NCommand, TATCommandInvoke.MenuMain);
 
   if (NCommand<>-1)
     and (NCommand<>cmd_FileClose)
@@ -7507,7 +7597,7 @@ begin
 
   if bWithLexer then
   begin
-    SLexer:= EditorLexerNameAtPos(Ed, Point(Caret.PosX, Caret.PosY));
+    SLexer:= EditorLexerNameAtPos(Ed, Caret.AsPoint);
     if SLexer='' then exit;
 
     bNeedHtml:= UiOps.AutocompleteHtml and SRegexMatchesString(SLexer, UiOps.AutocompleteHtml_Lexers, false);
@@ -7613,8 +7703,8 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     Frame:= Frames[i];
-    if (Frame.Ed1=AppCodetreeState.Editor) or
-       (Frame.Ed2=AppCodetreeState.Editor) then
+    if (Frame.EdFirst=AppCodetreeState.Editor) or
+       (Frame.EdSecond=AppCodetreeState.Editor) then
     begin
       Frame.CodetreeSortType:= CodeTree.Tree.SortType;
       //user unchecks 'Sorted' -> rebuild the codetree
@@ -8235,7 +8325,7 @@ begin
   F:= FrameOfPopup;
   if F=nil then exit;
 
-  F.Editor.DoCommand(cmd_CopyFilenameDir, TATCommandInvoke.MenuContext);
+  F.EdCurrent.DoCommand(cmd_CopyFilenameDir, TATCommandInvoke.MenuContext);
 end;
 
 procedure TfmMain.mnuTabCopyFullPathClick(Sender: TObject);
@@ -8245,7 +8335,7 @@ begin
   F:= FrameOfPopup;
   if F=nil then exit;
 
-  F.Editor.DoCommand(cmd_CopyFilenameFull, TATCommandInvoke.MenuContext);
+  F.EdCurrent.DoCommand(cmd_CopyFilenameFull, TATCommandInvoke.MenuContext);
 end;
 
 procedure TfmMain.mnuTabCopyNameClick(Sender: TObject);
@@ -8255,7 +8345,7 @@ begin
   F:= FrameOfPopup;
   if F=nil then exit;
 
-  F.Editor.DoCommand(cmd_CopyFilenameName, TATCommandInvoke.MenuContext);
+  F.EdCurrent.DoCommand(cmd_CopyFilenameName, TATCommandInvoke.MenuContext);
 end;
 
 procedure DoParseOutputLine(const AForm: TAppFormWithEditor;
@@ -8359,7 +8449,7 @@ begin
     if bFound then
     begin
       Frame.SetFocus;
-      Frame.Editor.DoGotoPos(
+      Frame.EdCurrent.DoGotoPos(
          Point(ResCol, ResLine),
          Point(-1, -1),
          UiOps.FindIndentHorz,
@@ -8602,8 +8692,8 @@ begin
   //load lexer-specific config
   DoOps_LoadOptionsLexerSpecific(Frame, Ed);
 
-  DoApplyCenteringOption(Frame, Frame.Ed1);
-  DoApplyCenteringOption(Frame, Frame.Ed2);
+  DoApplyCenteringOption(Frame, Frame.EdFirst);
+  DoApplyCenteringOption(Frame, Frame.EdSecond);
 
   //API event on_lexer
   //better avoid it for empty editor
@@ -8622,8 +8712,8 @@ begin
 
   if Frame.EditorsLinked then
   begin
-    Frame.Ed1.Keymap:= Keymap;
-    Frame.Ed2.Keymap:= Keymap;
+    Frame.EdFirst.Keymap:= Keymap;
+    Frame.EdSecond.Keymap:= Keymap;
   end
   else
     Ed.Keymap:= Keymap;
@@ -8650,7 +8740,7 @@ begin
     Frame:= CurrentFrame;
     if Assigned(Frame) then
     begin
-      Frame.Editor.DoCommand(NCmd, TATCommandInvoke.AppToolbar);
+      Frame.EdCurrent.DoCommand(NCmd, TATCommandInvoke.AppToolbar);
       UpdateToolbarButtons(Frame);
     end;
   end
@@ -8945,9 +9035,9 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     F:= Frames[i];
-    F.FixLexerIfDeleted(F.Ed1, ALexerName);
+    F.FixLexerIfDeleted(F.EdFirst, ALexerName);
     if not F.EditorsLinked then
-      F.FixLexerIfDeleted(F.Ed2, ALexerName);
+      F.FixLexerIfDeleted(F.EdSecond, ALexerName);
   end;
 end;
 
@@ -9102,7 +9192,7 @@ end;
 
 function TfmMain.DoOnTabGetTick(Sender: TObject; ATabObject: TObject): Int64;
 begin
-  Result:= TEditorFrame(ATabObject).Editor.ActivationTime;
+  Result:= TEditorFrame(ATabObject).EdCurrent.ActivationTime;
 end;
 
 function TfmMain.IsWindowMaximizedOrFullscreen: boolean;
@@ -9419,8 +9509,8 @@ function _FrameListCompare(List: TStringList; Index1, Index2: Integer): Integer;
 var
   t1, t2: Int64;
 begin
-  t1:= TEditorFrame(List.Objects[Index1]).Editor.ActivationTime;
-  t2:= TEditorFrame(List.Objects[Index2]).Editor.ActivationTime;
+  t1:= TEditorFrame(List.Objects[Index1]).EdCurrent.ActivationTime;
+  t2:= TEditorFrame(List.Objects[Index2]).EdCurrent.ActivationTime;
   if t1>t2 then
     Result:= -1
   else
@@ -9533,7 +9623,7 @@ begin
 
     DlgProps:= Default(TDlgMenuProps);
     DlgProps.ItemsText:= List.Text;
-    DlgProps.InitialIndex:= List.IndexOf(Frame.LexerName[Frame.Editor]);
+    DlgProps.InitialIndex:= List.IndexOf(Frame.LexerName[Frame.EdCurrent]);
     DlgProps.Caption:= SCaption;
     DlgProps.NoFuzzy:= not UiOps.ListboxFuzzySearch;
     DlgProps.NoKeepFilter:= true;
@@ -9543,13 +9633,13 @@ begin
 
     Obj:= List.Objects[NIndex];
     if Obj=nil then
-      Frame.Lexer[Frame.Editor]:= nil
+      Frame.Lexer[Frame.EdCurrent]:= nil
     else
     if Obj is TecSyntAnalyzer then
-      Frame.Lexer[Frame.Editor]:= Obj as TecSyntAnalyzer
+      Frame.Lexer[Frame.EdCurrent]:= Obj as TecSyntAnalyzer
     else
     if Obj is TATLiteLexer then
-      Frame.LexerLite[Frame.Editor]:= Obj as TATLiteLexer;
+      Frame.LexerLite[Frame.EdCurrent]:= Obj as TATLiteLexer;
   finally
     FreeAndNil(List);
   end;
@@ -10121,8 +10211,8 @@ begin
   for i:= 0 to FrameCount-1 do
   begin
     Frame:= Frames[i];
-    (Sender as TfmUnprinted).ApplyToEditor(Frame.Ed1);
-    (Sender as TfmUnprinted).ApplyToEditor(Frame.Ed2);
+    (Sender as TfmUnprinted).ApplyToEditor(Frame.EdFirst);
+    (Sender as TfmUnprinted).ApplyToEditor(Frame.EdSecond);
   end;
 end;
 

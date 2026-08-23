@@ -16,8 +16,8 @@ uses
   ATBinHex;
 
 const
-  cAppExeVersion = '1.236.0.0';
-  cAppApiVersion = 483;
+  cAppExeVersion = '1.236.0.4';
+  cAppApiVersion = '1.0.483';
 
 const
   cOptionSystemSuffix =
@@ -121,7 +121,7 @@ const
   msgOpenLink: string = 'Open %s';
 
   msgPanelMenu_Init = 'Menu';
-  msgPanelTree_Init = 'Code tree';
+  msgPanelTree_Init = 'Code-Tree';
   msgPanelProject_Init = 'Project';
   msgPanelTabs_Init = 'Tabs';
   msgPanelSnippet_Init = 'Snippet Panel';

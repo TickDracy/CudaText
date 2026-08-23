@@ -1,38 +1,13 @@
 name: Build Windows ARM64 CudaText
 
-# -----------------------------------------------------------------------------
-# PRE-REQUISITE (one-time manual step):
-#
-# The installaware.com/lazarus-arm64.msi (patched FPC + Lazarus with ARM64
-# cross-compiler) blocks automated downloads from cloud/CI IPs. You must
-# download it manually once and host it where GitHub Actions can reach it.
-#
-# Steps:
-#   1. On your local machine, download:
-#        https://www.installaware.com/lazarus-arm64.msi
-#   2. On YOUR FORK, create a GitHub Release tagged "toolchain-cache"
-#      (Title: "Toolchain cache - do not delete").
-#   3. Upload lazarus-arm64.msi as a release asset to that release.
-#   4. The workflow fetches it from there on every run via the GitHub API.
-#
-# The release tag is controlled by the TOOLCHAIN_RELEASE_TAG env var below.
-#
-# NOTE: This workflow runs on an Intel (x64) runner and uses the ppcrossa64
-# cross-compiler to produce native Windows ARM64 binaries. The resulting
-# cudatext.exe is a native ARM64 executable — no emulation required.
-# -----------------------------------------------------------------------------
-
 on:
   workflow_dispatch:
-
-env:
-  TOOLCHAIN_RELEASE_TAG: toolchain-cache
 
 jobs:
   build:
     name: Build for Windows ARM64 (cross-compile)
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
 
     steps:
       # -- 1. Resolve latest CudaText release tag from upstream ----------
@@ -65,175 +40,144 @@ jobs:
         shell: bash
         run: |
           VER=$(grep -oE "cAppExeVersion\s*=\s*'[^']+'" upstream_src/app/proc_msg.pas \
-                | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
-                || echo "unknown")
+            | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+            || echo "unknown")
           echo "cudatext_version=$VER" >> "$GITHUB_OUTPUT"
           echo "CudaText version: $VER"
 
-      # -- 4. Download cached Lazarus ARM64 MSI from this fork's releases -
-      - name: Download Lazarus ARM64 MSI from fork release cache
-        id: download_msi
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # -- 4. Install dependencies (git, make, etc.) ---------------------
+      - name: Install dependencies
         shell: powershell
         run: |
-          $repo     = $env:GITHUB_REPOSITORY
-          $tag      = $env:TOOLCHAIN_RELEASE_TAG
-          $msiPath  = (Join-Path $env:TEMP "lazarus-arm64.msi")
-          $jsonPath = (Join-Path $env:TEMP "release-info.json") -replace "\\","/"
-
-          Write-Host "Fetching release asset list for tag '$tag' in $repo ..."
-
-          curl.exe -fsSL `
-            -H "Accept: application/vnd.github+json" `
-            -H "Authorization: Bearer $env:GH_TOKEN" `
-            -o $jsonPath `
-            "https://api.github.com/repos/$repo/releases/tags/$tag"
-
+          Write-Host "Checking for required tools..."
+          git --version
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::Release tagged '$tag' not found in $repo (curl exit $LASTEXITCODE)."
-            Write-Host "::error::Please follow the PRE-REQUISITE steps at the top of build-windows-arm64.yml."
-            exit 1
+            Write-Host "Installing git via Chocolatey..."
+            choco install git -y --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to install git"
+            }
           }
-
-          $assetUrl = python3 -c "import json; d=json.load(open('$jsonPath',encoding='utf-8')); a=[x for x in d.get('assets',[]) if x['name']=='lazarus-arm64.msi']; print(a[0]['url'] if a else '')"
-
-          if (-not $assetUrl -or $assetUrl.Trim() -eq '') {
-            Write-Host "::error::Release '$tag' exists but lazarus-arm64.msi asset is missing."
-            Write-Host "::error::Upload lazarus-arm64.msi to the '$tag' release on your fork."
-            exit 1
+          make --version 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Installing make via Chocolatey..."
+            choco install make -y --no-progress
           }
+          Write-Host "Dependencies check/install complete."
 
-          Write-Host "Downloading MSI from release asset ..."
-          curl.exe -fsSL `
-            -H "Accept: application/octet-stream" `
-            -H "Authorization: Bearer $env:GH_TOKEN" `
-            -L -o $msiPath $assetUrl
-
-          if ($LASTEXITCODE -ne 0 -or !(Test-Path $msiPath)) {
-            throw "Download of lazarus-arm64.msi failed."
-          }
-
-          $sizeMB = [Math]::Round((Get-Item $msiPath).Length / 1MB, 1)
-          Write-Host "Downloaded lazarus-arm64.msi ($sizeMB MB)"
-          echo "msi_path=$msiPath" >> $env:GITHUB_OUTPUT
-
-      # -- 5. Install Lazarus with ARM64 cross-compiler -------------------
-      - name: Install Lazarus ARM64 cross-compiler
+      # -- 5. Download latest fpcupdeluxe (v2.4.0k) ---------------------
+      - name: Download fpcupdeluxe
         shell: powershell
         run: |
-          $msiPath = "${{ steps.download_msi.outputs.msi_path }}"
-          $logPath = "$env:TEMP\lazarus-arm64-install.log"
+          $installer = "C:\fpcupdeluxe-installer.exe"
+          Write-Host "Downloading fpcupdeluxe v2.4.0k..."
+          curl.exe -L -o $installer "https://github.com/LongDirtyAnimAlf/fpcupdeluxe/releases/download/v2.4.0k/fpcupdeluxe-x86_64-win64.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download fpcupdeluxe" }
+          $size = [Math]::Round((Get-Item $installer).Length / 1MB, 1)
+          Write-Host "Downloaded: $size MB"
+          echo "FPCUPDELUXE_PATH=$installer" >> $env:GITHUB_ENV
 
-          Write-Host "Running MSI wrapper (silent)..."
-          $proc = Start-Process msiexec.exe `
-            -ArgumentList "/i `"$msiPath`" /quiet /norestart /l*v `"$logPath`"" `
-            -Wait -PassThru
+      # -- 6. Install FPC and Lazarus trunk using fpcupdeluxe ------------
+      - name: Install FPC and Lazarus trunk
+        shell: cmd
+        env:
+          FPCUP_DELUXE_NO_GUI: "1"
+        run: |
+          echo Installing FPC trunk and Lazarus trunk (this may take 20-30 min)...
+          "%FPCUPDELUXE_PATH%" --fpcURL=trunk --lazURL=trunk --installdir=C:\fpcupdeluxe --noconfirm --verbose
+          if %ERRORLEVEL% NEQ 0 (
+            echo ::error::fpcupdeluxe failed with exit code %ERRORLEVEL%
+            echo === fpcupdeluxe log ===
+            if exist C:\fpcupdeluxe\log.txt type C:\fpcupdeluxe\log.txt
+            exit /b 1
+          )
+          echo Installation completed successfully.
 
-          if ($proc.ExitCode -ne 0) {
-            Write-Host "=== Install log (last 80 lines) ==="
-            Get-Content $logPath -Tail 80 -ErrorAction SilentlyContinue
-            throw "MSI failed (exit code $($proc.ExitCode))"
-          }
+      # -- 7. Install aarch64-win64 cross compiler -----------------------
+      - name: Install aarch64-win64 cross compiler
+        shell: cmd
+        env:
+          FPCUP_DELUXE_NO_GUI: "1"
+        run: |
+          echo Installing aarch64-win64 cross compiler (this may take 10-15 min)...
+          "%FPCUPDELUXE_PATH%" --installdir=C:\fpcupdeluxe --ostarget=win64 --cputarget=aarch64 --only=FPCCleanOnly,FPCBuildOnly --autotools --noconfirm --verbose
+          if %ERRORLEVEL% NEQ 0 (
+            echo ::error::fpcupdeluxe cross-compiler failed with exit code %ERRORLEVEL%
+            echo === fpcupdeluxe log ===
+            if exist C:\fpcupdeluxe\log.txt type C:\fpcupdeluxe\log.txt
+            exit /b 1
+          )
+          echo Cross compiler installation completed successfully.
 
-          Write-Host "MSI exited. Waiting for fpcupdeluxe child process to finish..."
-
-          # Poll for lazbuild.exe to appear - timeout after 55 minutes
-          $targetExe = "C:\fpcupdeluxe\lazarus\lazbuild.exe"
-          $deadline  = (Get-Date).AddMinutes(55)
-          $elapsed   = 0
-
-          while (-not (Test-Path $targetExe)) {
-            if ((Get-Date) -gt $deadline) {
-              Write-Host "::error::Timed out waiting for $targetExe after 55 minutes"
-              if (Test-Path "C:\fpcupdeluxe") {
-                Get-ChildItem "C:\fpcupdeluxe" -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-                  Select-Object FullName | Format-Table -HideTableHeaders
-              }
-              exit 1
-            }
-            if ($elapsed % 60 -eq 0) {
-              Write-Host "Still waiting... ($elapsed s elapsed)"
-            }
-            Start-Sleep -Seconds 10
-            $elapsed += 10
-          }
-
-          Write-Host "lazbuild.exe found at: $targetExe"
-          Write-Host "Lazarus ARM64 cross-compiler installed successfully."
-
-      # -- 6. Configure PATH and verify cross-compiler --------------------
+      # -- 8. Configure PATH and verify cross-compiler --------------------
       - name: Configure PATH and verify cross-compiler
-        shell: powershell
+        shell: pwsh
         run: |
-          $lazDir = "C:\fpcupdeluxe\lazarus"
-          $fpcDir = "C:\fpcupdeluxe\fpc\bin\i386-win32"
-
+          $installDir = "C:\fpcupdeluxe"
+          $lazDir = "$installDir\lazarus"
+          $fpcDir = "$installDir\fpc\bin\x86_64-win64"
           if (-not (Test-Path "$lazDir\lazbuild.exe")) {
-            throw "lazbuild.exe not found at: $lazDir\lazbuild.exe"
+            Write-Host "::error::lazbuild.exe not found at: $lazDir\lazbuild.exe"
+            Write-Host "Contents of $installDir:"
+            Get-ChildItem $installDir -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName
+            throw "lazbuild.exe not found"
           }
-
-          # Verify cross-compiler exists
           $crossCompiler = "$fpcDir\ppcrossa64.exe"
           if (-not (Test-Path $crossCompiler)) {
             Write-Host "::error::ARM64 cross-compiler not found at: $crossCompiler"
-            Write-Host "Available compilers:"
-            Get-ChildItem $fpcDir -Filter "ppc*.exe" | Select-Object Name
+            if (Test-Path $fpcDir) {
+              Write-Host "Available compilers in $fpcDir:"
+              Get-ChildItem $fpcDir -Filter "ppc*.exe" | Select-Object Name
+            } else {
+              Write-Host "Directory $fpcDir does not exist. Contents of $installDir\fpc:"
+              Get-ChildItem "$installDir\fpc" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName
+            }
             exit 1
           }
-
           Add-Content -Path $env:GITHUB_PATH -Value $lazDir
           Add-Content -Path $env:GITHUB_PATH -Value $fpcDir
           Add-Content -Path $env:GITHUB_ENV -Value "LAZ_DIR=$lazDir"
           Add-Content -Path $env:GITHUB_ENV -Value "FPC_DIR=$fpcDir"
-
           Write-Host "-- lazbuild version --"
           & "$lazDir\lazbuild.exe" --version
-
           Write-Host "-- Cross-compiler target verification --"
           $targetCPU = & $crossCompiler -iTP
-          $targetOS  = & $crossCompiler -iTO
+          $targetOS = & $crossCompiler -iTO
           Write-Host "ppcrossa64.exe targets: $targetCPU / $targetOS"
-
           if ($targetCPU -ne "aarch64" -or $targetOS -ne "win64") {
             throw "Cross-compiler does not target aarch64/win64 as expected"
           }
+          Write-Host "Cross-compiler verification successful"
 
-      # -- 7. Clone CudaText build environment --------------------------
+      # -- 9. Clone CudaText build environment --------------------------
       - name: Clone CudaText_up
         run: git clone --depth 1 https://github.com/Alexey-T/CudaText_up
 
-      # -- 8. Download all CudaText sources and dependencies ------------
+      # -- 10. Download all CudaText sources and dependencies ------------
       - name: Download CudaText sources and dependencies
         working-directory: CudaText_up
         shell: bash
         run: ./cudaup.sh -g
 
-      # -- 9. Replace downloaded source with the release checkout -------
+      # -- 11. Replace downloaded source with the release checkout -------
       - name: Swap source with release checkout
         shell: bash
         run: |
           rm -rf CudaText_up/src/CudaText
           mv upstream_src CudaText_up/src/CudaText
 
-      # -- 10. Build packages for ARM64 target ----------------------------
-      # cudaup.sh doesn't support cross-compilation, so we invoke lazbuild
-      # directly with the correct flags for ARM64 cross-compilation.
+      # -- 12. Build packages for ARM64 target ----------------------------
       - name: Build Lazarus packages for ARM64
         shell: powershell
         run: |
           $lazDir = $env:LAZ_DIR
           $lazbuild = "$lazDir\lazbuild.exe"
-
-          # Common flags for ARM64 cross-compilation
           $flags = @(
             "--os=win64",
             "--cpu=aarch64",
             "--ws=win32",
             "--lazarusdir=$lazDir"
           )
-
-          # Package list in dependency order (same as cudaup.sh)
           $packages = @(
             "src/bgrabitmap/bgrabitmap/bgrabitmappack.lpk",
             "src/EncConv/encconv/encconv_package.lpk",
@@ -246,9 +190,7 @@ jobs:
             "src/Python-for-Lazarus/python4lazarus/python4lazarus_package.lpk",
             "src/Emmet-Pascal/emmet/emmet_package.lpk"
           )
-
           Set-Location CudaText_up
-
           foreach ($pkg in $packages) {
             if (Test-Path $pkg) {
               Write-Host "Building package: $pkg"
@@ -261,98 +203,72 @@ jobs:
               Write-Host "::warning::Package not found: $pkg"
             }
           }
-
           Write-Host "All packages built successfully."
 
-      # -- 11. Compile CudaText for Windows ARM64 -------------------------
-      # Use the project's "windows aarch64" build mode which has all the
-      # correct settings for ARM64 cross-compilation already configured.
+      # -- 13. Compile CudaText for Windows ARM64 -------------------------
       - name: Compile CudaText for ARM64
         shell: powershell
         run: |
           $lazDir = $env:LAZ_DIR
           $lazbuild = "$lazDir\lazbuild.exe"
-
           $flags = @(
             "--build-mode=windows aarch64",
             "--lazarusdir=$lazDir",
             "src/CudaText/app/cudatext.lpi"
           )
-
           Set-Location CudaText_up
           Write-Host "Compiling CudaText for ARM64..."
           & $lazbuild @flags
-
           if ($LASTEXITCODE -ne 0) {
             throw "CudaText compilation failed"
           }
-
           Write-Host "CudaText compiled successfully."
 
-      # -- 12. Locate and verify compiled binary -------------------------
+      # -- 14. Locate and verify compiled binary -------------------------
       - name: Locate and verify compiled binary
         id: binary
         shell: bash
         run: |
           set -euo pipefail
-
           echo "Searching for cudatext.exe..."
           find CudaText_up -name "cudatext.exe" -type f 2>/dev/null || true
-
-          # The cross-compiled binary should be in a path containing aarch64
           COMPILED=$(find CudaText_up -name "cudatext.exe" -type f 2>/dev/null | head -1 || true)
-
           if [ -z "$COMPILED" ] || [ ! -f "$COMPILED" ]; then
             echo "::error::cudatext.exe not found anywhere under CudaText_up/"
             echo "Listing all .exe files:"
             find CudaText_up -name "*.exe" 2>/dev/null || true
             exit 1
           fi
-
           COMPILED_SIZE=$(wc -c < "$COMPILED")
           echo "Compiled binary: $COMPILED ($COMPILED_SIZE bytes)"
-
           if [ "$COMPILED_SIZE" -lt 1000000 ]; then
             echo "::error::Binary is suspiciously small ($COMPILED_SIZE bytes)"
             exit 1
           fi
-
-          # Verify it's an ARM64 PE executable
           echo "Verifying binary architecture..."
           file "$COMPILED" || true
-
           echo "compiled_path=$COMPILED" >> "$GITHUB_OUTPUT"
 
-      # -- 13. Stage files for artifact upload ----------------------------
-      # Prepare the distribution directory. upload-artifact will handle
-      # compression automatically — no need to create a ZIP ourselves.
+      # -- 15. Stage files for artifact upload ----------------------------
       - name: Stage files for artifact
         id: stage
         shell: bash
         run: |
           set -euo pipefail
-
           VER="${{ steps.version.outputs.cudatext_version }}"
           STAGE="cudatext-windows-aarch64-${VER}"
           SRC="CudaText_up/src/CudaText/app"
-
           mkdir -p "$STAGE"
-
           cp "${{ steps.binary.outputs.compiled_path }}" "$STAGE/cudatext.exe"
-
           [ -d "$SRC/data" ] && cp -r "$SRC/data" "$STAGE/"
-          [ -d "$SRC/py"   ] && cp -r "$SRC/py"   "$STAGE/"
-
-          printf 'CudaText %s\nhttps://cudatext.github.io\n\nINSTRUCTIONS:\n\n- Extract this folder anywhere and run cudatext.exe.\n\nDocumentation: https://wiki.freepascal.org/CudaText\n' \
+          [ -d "$SRC/py" ] && cp -r "$SRC/py" "$STAGE/"
+          printf "CudaText %s\nhttps://cudatext.github.io\n\nINSTRUCTIONS:\n\n- Extract this folder anywhere and run cudatext.exe.\n\nDocumentation: https://wiki.freepascal.org/CudaText\n" \
             "$VER" > "$STAGE/readme.txt"
-
           echo "-- Staging directory contents --"
           ls -lh "$STAGE/"
-
           echo "stage_dir=$STAGE" >> "$GITHUB_OUTPUT"
 
-      # -- 14. Upload artifact --------------------------------------------
-      # upload-artifact creates the ZIP automatically from the directory.
+      # -- 16. Upload artifact --------------------------------------------
       - name: Upload Windows ARM64 artifact
         uses: actions/upload-artifact@v4
         with:

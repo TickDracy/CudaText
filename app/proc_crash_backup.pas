@@ -478,15 +478,15 @@ end;
 function DoBackup: string;
 var
   Ed: TATSynEdit;
-  EdBrother: TATSynEdit;
+  EdOther: TATSynEdit;
   Frame: TEditorFrame;
   MatchedFrame: TEditorFrame;
-  i: Integer;
   ShadowEd: TATSynEdit;
   ShadowIsValid: Boolean;
   Timestamp: AnsiString;
-  FirstPath: string;
-  BrotherPath: string;
+  SFirstPath: string;
+  SBrotherPath: string;
+  i: Integer;
 begin
   Result := '';
 
@@ -503,7 +503,7 @@ begin
     begin
       Frame := TEditorFrame(AppFrameList1.Items[i]);
       if not Assigned(Frame) then Continue;
-      if (Frame.Ed1 = ShadowEd) or (Frame.Ed2 = ShadowEd) then
+      if (Frame.EdFirst = ShadowEd) or (Frame.EdSecond = ShadowEd) then
       begin
         ShadowIsValid := True;
         MatchedFrame := Frame;
@@ -521,8 +521,8 @@ begin
     begin
       Frame := TEditorFrame(AppFrameList1.Items[i]);
       if not Assigned(Frame) then Continue;
-      if (Frame.Ed1 = AppCodetreeState.Editor) or
-         (Frame.Ed2 = AppCodetreeState.Editor) then
+      if (Frame.EdFirst = AppCodetreeState.Editor) or
+         (Frame.EdSecond = AppCodetreeState.Editor) then
       begin
         Ed := TATSynEdit(AppCodetreeState.Editor);
         MatchedFrame := Frame;
@@ -538,7 +538,7 @@ begin
       Frame := TEditorFrame(AppFrameList1.Items[i]);
       if Assigned(Frame) then
       begin
-        Ed := Frame.Ed1;
+        Ed := Frame.EdFirst;
         if Assigned(Ed) then
         begin
           MatchedFrame := Frame;
@@ -563,33 +563,33 @@ begin
   Timestamp := FormatTimestamp;
 
   { Back up the focused editor. }
-  FirstPath := BackupOneEditor(Ed, MatchedFrame, Timestamp);
-  if FirstPath <> '' then
-    Result := FirstPath;
+  SFirstPath := BackupOneEditor(Ed, MatchedFrame, Timestamp);
+  if SFirstPath <> '' then
+    Result := SFirstPath;
 
   { Handle the paired editor (split-view with two different files).
-    When Frame.EditorsLinked=False, Ed1 and Ed2 have separate buffers
+    When Frame.EditorsLinked=False, EdFirst and EdSecond have separate buffers
     and may have different content/modified state. If the brother
     editor is also modified, back it up too.
 
     When Frame.EditorsLinked=True, both editors share the same
-    Strings buffer (Ed2.Strings = Ed1.Strings), so the backup we just
+    Strings buffer, so the backup we just
     wrote already covers the brother - no separate backup needed. }
   if Assigned(MatchedFrame) and not MatchedFrame.EditorsLinked then
   begin
-    { GetEditorBrother: if Ed=Ed1 return Ed2, else return Ed1. }
-    if Ed = MatchedFrame.Ed1 then
-      EdBrother := MatchedFrame.Ed2
+    { GetEditorBrother: if Ed=EdFirst return EdSecond, else return EdFirst. }
+    if Ed = MatchedFrame.EdFirst then
+      EdOther := MatchedFrame.EdSecond
     else
-      EdBrother := MatchedFrame.Ed1;
+      EdOther := MatchedFrame.EdFirst;
 
-    if Assigned(EdBrother) and EdBrother.Modified then
+    if Assigned(EdOther) and EdOther.Modified then
     begin
       LogStep('[backup] backing up paired editor (EditorsLinked=False)');
-      BrotherPath := BackupOneEditor(EdBrother, MatchedFrame, Timestamp + '_');
+      SBrotherPath := BackupOneEditor(EdOther, MatchedFrame, Timestamp + '_');
       // add '_' to make bak filename different by one char, for untitled tab
-      if (BrotherPath <> '') and (Result = '') then
-        Result := BrotherPath;
+      if (SBrotherPath <> '') and (Result = '') then
+        Result := SBrotherPath;
     end;
   end;
 end;

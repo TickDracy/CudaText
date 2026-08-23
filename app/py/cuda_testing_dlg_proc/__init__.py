@@ -257,17 +257,29 @@ class Command:
 
         #paint circle of randon color
         n = randint(0, 0xfffff)
-        canvas_id = dlg_proc(id_dlg, DLG_CTL_HANDLE, name='paint')
-        canvas_proc(canvas_id, CANVAS_SET_PEN, color=0xA0)
-        canvas_proc(canvas_id, CANVAS_SET_BRUSH, color=n+0xA0FF00)
-        canvas_proc(canvas_id, CANVAS_RECT, x=0, y=0, x2=50, y2=50)
-        canvas_proc(canvas_id, CANVAS_SET_BRUSH, color=n+0xA0A0)
-        canvas_proc(canvas_id, CANVAS_ELLIPSE, x=0, y=0, x2=50, y2=50)
+        h_image = dlg_proc(id_dlg, DLG_CTL_HANDLE, name='image1')
+        h_bitmap = image_proc(h_image, IMAGE_GET_BITMAP)
+        h_canvas = bitmap_proc(h_bitmap, BITMAP_GET_CANVAS)
+        bitmap_proc(h_bitmap, BITMAP_SET_SIZE, 50, 50)
+        canvas_proc(h_canvas, CANVAS_SET_PEN, color=0xA0)
+        canvas_proc(h_canvas, CANVAS_SET_BRUSH, color=n+0xA0FF00)
+        canvas_proc(h_canvas, CANVAS_RECT, x=0, y=0, x2=50, y2=50)
+        canvas_proc(h_canvas, CANVAS_SET_BRUSH, color=n+0xA0A0)
+        canvas_proc(h_canvas, CANVAS_ELLIPSE, x=0, y=0, x2=50, y2=50)
 
         #paint 2 first icons of standard file-tabs imagelist
         il = app_proc(PROC_GET_TAB_IMAGELIST, '')
-        imagelist_proc(il, IMAGELIST_PAINT, (canvas_id, 0, 0, 0))
-        imagelist_proc(il, IMAGELIST_PAINT, (canvas_id, 16, 16, 1))
+        imagelist_proc(il, IMAGELIST_PAINT, (h_canvas, 0, 0, 0))
+        imagelist_proc(il, IMAGELIST_PAINT, (h_canvas, 16, 16, 1))
+        
+        #paint bitmap
+        h_bmp = bitmap_proc(0, BITMAP_CREATE, 20, 20)
+        h_bmp_cnv = bitmap_proc(h_bmp, BITMAP_GET_CANVAS)
+        canvas_proc(h_bmp_cnv, CANVAS_SET_BRUSH, color=0xFF, style=BRUSH_SOLID)
+        canvas_proc(h_bmp_cnv, CANVAS_RECT_FILL, x=0, y=0, x2=20, y2=20)
+        canvas_proc(h_canvas, CANVAS_BITMAP, p1=h_bmp, x=30, y=30)
+        canvas_proc(h_canvas, CANVAS_BITMAP_SIZED, p1=h_bmp, x=0, y=0, x2=7, y2=35)
+        bitmap_proc(h_bmp, BITMAP_FREE)
 
     def callback_maindlg_paint_click(self, id_dlg, id_ctl, data='', info=''):
         self.do_paint_mark(id_dlg, id_ctl)
@@ -645,14 +657,14 @@ class Command:
             })
 
         #test for live callback
-        n=dlg_proc(h, DLG_CTL_ADD, 'paintbox')
+        n=dlg_proc(h, DLG_CTL_ADD, 'image')
         dlg_proc(h, DLG_CTL_PROP_SET, index=n, prop={
-            'name': 'paint',
+            'name': 'image1',
             'x': 250,
             'y': 200,
-            'w': 60,
+            'w': 100,
             'h': 60,
-            'on_click': self.callback_maindlg_paint_click
+            # 'on_click': self.callback_maindlg_paint_click
             })
 
         nfocus = dlg_proc(h, DLG_CTL_FIND, 'edit1')
@@ -1406,3 +1418,12 @@ end
 
     def test_labels_render(self):
         test_labels_render()
+
+
+    def test_docking(self):
+        h_dlg = dlg_proc(0, DLG_CREATE)
+        dlg_proc(h_dlg, DLG_PROP_SET, prop={'w':300, 'h':100, 'color': 0xFF})
+        ed.set_prop(PROP_SPLIT, ('v', 500))
+        dlg_proc(h_dlg, DLG_SHOW_NONMODAL)
+        h_parent = ed.get_prop(PROP_HANDLE_PARENT)
+        dlg_proc(h_dlg, DLG_DOCK, prop='R', index=h_parent)

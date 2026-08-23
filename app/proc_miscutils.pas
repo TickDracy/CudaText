@@ -67,7 +67,6 @@ procedure AppFormFocus(F: TForm; AllowShow: boolean);
 
 function Canvas_TextMultilineExtent(C: TCanvas; const AText: string): TPoint;
 function Canvas_NumberToFontStyles(Num: integer): TFontStyles;
-procedure Canvas_PaintPolygonFromSting(C: TCanvas; const AText: string);
 procedure Canvas_PaintImageInRect(C: TCanvas; APic: TGraphic; const ARect: TRect);
 
 function AppLoadPictureFromFile(const AFilename: string): TGraphic;
@@ -101,9 +100,6 @@ procedure ApplyThemeToTreeview(C: TTreeview; AThemedColors, AChangeShowRoot: boo
 procedure ApplyThemeToToolbar(C: TATFlatToolbar);
 procedure ApplyThemeToImageBox(AImageBox: TATImageBox);
 
-function ConvertTwoPointsToDiffPoint(APrevPnt, ANewPnt: TPoint): TPoint;
-function ConvertShiftStateToString(const Shift: TShiftState): string;
-function ConvertKeyboardStateToShiftState: TShiftState; //like VCL
 function UpdateImagelistWithIconFromFile(AList: TCustomImagelist;
   const AFilename, ACallerAPI: string; AllowScaling: boolean=false): integer;
 
@@ -130,6 +126,12 @@ procedure AppMenuCopy(ASrc, ADest: TMenu);
 function AppMenuGetIndexToInsert(AMenu: TMenuItem; ACaption: string): integer;
 procedure AppMenuShowAtEditorCorner(AMenu: TPopupMenu; Ed: TATSynEdit);
 
+type
+  TAppPointArray = array of TPoint;
+
+function ConvertShiftStateToString(const Shift: TShiftState): string;
+function ConvertKeyboardStateToShiftState: TShiftState; //like VCL
+
 function ConvertFileDateToNiceString(const AFilename: string): string;
 function ConvertFilenameToMenuCaption(const fn: string): string;
 
@@ -138,6 +140,8 @@ procedure ConvertFinderOptionsFromString(F: TATEditorFinder; const S: string);
 
 function ConvertStringToIntArray(const AText: string): TATIntArray;
 function ConvertIntArrayToString(const A: TATIntArray): string;
+function ConvertStringToPointArray(const AText: string): TAppPointArray;
+function ConvertTwoPointsToDiffPoint(APrevPnt, ANewPnt: TPoint): TPoint;
 
 function ConvertMultiSelectStyleToString(St: TMultiSelectStyle): string;
 function ConvertStringToMultiSelectStyle(const S: string): TMultiSelectStyle;
@@ -366,25 +370,21 @@ begin
   if (Num and FONT_S)<>0 then Include(Result, fsStrikeOut);
 end;
 
-procedure Canvas_PaintPolygonFromSting(C: TCanvas; const AText: string);
+function ConvertStringToPointArray(const AText: string): TAppPointArray;
 var
   Sep: TATStringSeparator;
   P: TPoint;
-  Pnt: array of TPoint;
 begin
-  Pnt:= nil;
+  Result:= nil;
   Sep.Init(AText);
   repeat
     if not Sep.GetItemInt(P.X, MaxInt) then Break;
+    if (P.X=MaxInt) then Exit(nil);
     if not Sep.GetItemInt(P.Y, MaxInt) then Break;
-    if (P.X=MaxInt) then Exit;
-    if (P.Y=MaxInt) then Exit;
-    SetLength(Pnt, Length(Pnt)+1);
-    Pnt[Length(Pnt)-1]:= P;
+    if (P.Y=MaxInt) then Exit(nil);
+    SetLength(Result, Length(Result)+1);
+    Result[Length(Result)-1]:= P;
   until false;
-
-  if Length(Pnt)>2 then
-    C.Polygon(Pnt);
 end;
 
 
