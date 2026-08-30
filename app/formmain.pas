@@ -1320,7 +1320,8 @@ uses
   qtwidgets,
   ATStringProc_HtmlColor,
   {$endif}
-  ATSynEdit_ClipRecents;
+  ATSynEdit_ClipRecents,
+  ATSynEdit_CanvasProc_FillRect;
 
 {$R *.lfm}
 
@@ -5102,13 +5103,16 @@ begin
     exit
   end;
 
-  //prevent re-entering in DoFileOpen
+  {
+  //2026.08: this check gave regression: when Session Manager plugin handles opening of *.cuda-session,
+  //and user chooses 'open as session', SessManager opens a session, and this check breaks the work. issue #6429
   if AppOpeningFile then
   begin
     MsgLogConsole('NOTE: re-entering to DoFileOpen, strange, tell the developer what you did');
     exit;
   end;
   AppOpeningFile:= true;
+  }
 
   bFileExists:= (AFileName<>'') and FileExists(AFileName);
   bFileExists2:= (AFileName2<>'') and FileExists(AFileName2);

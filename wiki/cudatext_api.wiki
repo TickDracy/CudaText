@@ -2389,12 +2389,11 @@ Notes:
 
 ===Editor.get_text_all===
 
- get_text_all()
+ get_text_all(ends=False)
 
 Returns the entire editor text as string.
 
-Notes:
-* All line breaks are returned as LF, ie "\n".
+If optional param "ends" is True, line-breaks are returned per original text ("\n" or "\r\n" or "\r"), otherwise all line-breaks are returned as "\n".
 
 ===Editor.set_text_all===
 
@@ -2417,8 +2416,28 @@ Notes:
  get_line_len(index)
 
 Returns length of internal line UTF-16 (without BOM) representation.
-It is not the same as len(ed.get_text_line(index)), if internal UTF-16 representation has surrogate-pairs.
-Returns None if index is incorrect.
+It is not the same as <code>len(ed.get_text_line(index))</code>, if internal UTF-16 representation has surrogate-pairs.
+Returns None if param "index" is incorrect.
+
+===Editor.get_line_end===
+
+ get_line_end(index)
+
+Returns kind of line-ending (line-break) for the given line index.
+One of LINEEND_nnnn values, or None if param "index" is out of range.
+
+===Editor.set_line_end===
+
+ set_line_end(index, val)
+
+Sets kind of line-ending (line-break) for the given line index.
+Param "index" must be line index in the correct range.
+Param "val" must be one of LINEEND_nnnn constants.
+
+Notes:
+
+* It does not repaint the editor.
+* Value LINEEND_NONE should be set only for the very last line. App has the safeguard against LINEEND_NONE for non-last lines, text should be saved with default line-ending (ie line-ending set for the document) for such lines.
 
 ===Editor.get_text_line===
 
@@ -2434,11 +2453,13 @@ If param "max_len" is non-zero, and UTF-8 length of given line is greater than "
  set_text_line(index, text)
 
 Changes single line with given index (0-based) to given text.
-Text can have chr(10) and chr(13), but these chars won't make line-breaks automatically, and app will render these chars in the hex form (after file saving/reloading line-breaks will appear automatically).
 
 Special "index" values:
 * -1: Append new line, with final end-of-line.
 * -2: Append new line, but without final end-of-line.
+
+Notes:
+* Param "text" cannot have CR LF chars, otherwise function stops and returns False.
 
 ===Editor.get_text_substr===
 
@@ -2503,13 +2524,16 @@ Returns 2-tuple (x, y) of position after inserted text.
 
  replace_lines(y1, y2, lines)
 
-Deletes whole lines from index y1 to y2, then inserts new lines from specified list.
+Deletes whole lines from given line-index range (inclusive), then inserts new lines from specified list.
 
-* Index y1 must be valid index (0 to count-1).
-* Index y2 can be less than y1 (to not delete), and can be too big (to delete lines to end).
-* Param lines is list/tuple of str. Can be empty list to just delete lines. Inside items should not be "\n" and "\r": "\n" will generate additional lines, "\r" not handled.
+* Param "y1" is starting line-index, must be valid index (0 to count-1).
+* Param "y2" is ending line-index, can be less than "y1" (to not delete), and can be too big (to delete lines to end).
+* Param "lines" is list/tuple of str. Can be empty list to just delete lines.
 
-Returns bool: index y1 correct, replace done.
+It's allowed to override line-breaks for newly added lines if you add "\r\n" or "\n" or "\r" to line ends.
+Chars "\n" and "\r" not at the very line end - are prohibited, in such case function stops and returns False.
+
+Returns bool: param "y1" is correct, replacement is done.
 
 ==Selection==
 
@@ -5504,5 +5528,13 @@ It provides:
 * deprecate: IMAGE_PAINT_SIZED (use CANVAS_IMAGE_SIZED instead)
 * delete: dlg_proc control "paintbox" (almost none public plugins used it; use "image" instead)
 * delete: PROP_PICTURE (none public plugins used it; use PROP_HANDLE_IMAGE instead)
+
+1.0.484 (app 1.236.1)
+* add: Editor.get_text_all has optional param "ends"
+* add: Editor.get_line_end
+* add: Editor.set_line_end
+* add: Editor.replace_lines can override line-breaks for added lines
+* change: Editor.set_text_line don't allow line with CR LF
+* change: Editor.replace_lines don't allow lines with CR LF, except at the very line-end
 
 [[Category:CudaText]]

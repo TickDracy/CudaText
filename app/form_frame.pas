@@ -567,6 +567,7 @@ uses
   ATSynEdit_Bookmarks,
   ATSynEdit_CanvasProc,
   ATSynEdit_WrapInfo,
+  ATSynEdit_CanvasProc_FillRect,
   ATStringProc_Separator,
   ATStringProc_HtmlColor,
   ATSynEdit_Cmp_RenderHTML,
@@ -1248,15 +1249,17 @@ begin
         C.Font.Style:= [];
         C.Brush.Color:= NColor;
         RectLine:= Rect(X1, AY, X2, Y);
-        {$ifdef LCLGtk2}
-        C.FillRect(RectLine); //needed only when we use CairoTextOut (ie on gtk2)
+        {$if defined(LCLGtk2) or defined(LCLGtk3)}
+        //needed only when we use NativeTextout inside CanvasTextOutSimplest
+        CanvasFillRect(C, RectLine, NColor);
         {$endif}
         CanvasTextOutSimplest(C, RectLine.Left, RectLine.Top, Copy(AStr, NStartPos, NColorLen));
       end
       else
       begin
-        C.Brush.Color:= NColor;
-        C.FillRect(X1, Y-NLineWidth, X2, Y);
+        CanvasFillRect(C,
+          Rect(X1, Y-NLineWidth, X2, Y),
+          NColor);
       end;
     end;
   end;
@@ -1274,8 +1277,8 @@ begin
   Ed:= Sender as TATSynEdit;
   if Ed.OptRulerText='' then exit;
 
-  C.Brush.Color:= Ed.Colors.RulerBG;
-  C.FillRect(ARect);
+  //C.Brush.Color:= Ed.Colors.RulerBG;
+  CanvasFillRect(C, ARect, Ed.Colors.RulerBG);
 
   SRulerText:= Ed.OptRulerText;
   bUseHTML:= SBeginsWith(SRulerText, '<html>');

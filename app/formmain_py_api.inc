@@ -1027,16 +1027,60 @@ begin
     Result:= ReturnNone;
 end;
 
+function api_ed_get_line_end(Self, Args: PPyObject): PPyObject; cdecl;
+var
+  H: Int64;
+  Ed: TATSynEdit;
+  Strs: TATStrings;
+  Index: LongInt;
+begin
+  with AppPython.Engine do
+    if Bool(PyArg_ParseTuple(Args, 'Li:get_line_end', @H, @Index)) then
+    begin
+      Ed:= PyHelper_EditorFromHandle(H);
+      Strs:= Ed.Strings;
+      if Strs.IsIndexValid(Index) then
+        Result:= PyLong_FromLong(Ord(Strs.LinesEnds[Index]))
+      else
+        Result:= ReturnNone;
+    end
+  else
+    Result:= ReturnNone;
+end;
+
+function api_ed_set_line_end(Self, Args: PPyObject): PPyObject; cdecl;
+var
+  H: Int64;
+  Ed: TATSynEdit;
+  Strs: TATStrings;
+  NIndex, NValue: LongInt;
+begin
+  with AppPython.Engine do
+    if Bool(PyArg_ParseTuple(Args, 'Lii:set_line_end', @H, @NIndex, @NValue)) then
+    begin
+      Ed:= PyHelper_EditorFromHandle(H);
+      Strs:= Ed.Strings;
+      if Strs.IsIndexValid(NIndex) and (NValue>=0) and (NValue<=Ord(High(TATLineEnds))) then
+        Strs.LinesEnds[NIndex]:= TATLineEnds(NValue);
+      Result:= ReturnNone;
+    end
+  else
+    Result:= ReturnNone;
+end;
+
 function api_ed_get_text_all(Self, Args: PPyObject): PPyObject; cdecl;
 var
   H: Int64;
   Ed: TATSynEdit;
+  bEnds: LongBool;
 begin
   with AppPython.Engine do
-    if Bool(PyArg_ParseTuple(Args, 'L:get_text_all', @H)) then
+    if Bool(PyArg_ParseTuple(Args, 'Li:get_text_all', @H, @bEnds)) then
     begin
       Ed:= PyHelper_EditorFromHandle(H);
-      Result:= PyUnicodeFromString(Ed.Strings.TextString_Unicode);
+      Result:= PyUnicodeFromString(
+        Ed.Strings.TextString_Unicode(0, not bEnds)
+        );
     end
   else
     Result:= ReturnNone;
@@ -1820,6 +1864,8 @@ begin
     begin
       Ed:= PyHelper_EditorFromHandle(H);
       Str:= UTF8Decode(string(Ptr));
+      if SStringHasEol(Str) then
+        Exit(ReturnFalse);
       if not Ed.ModeReadOnly then
         EditorSetLineFromAPI(Ed, NIndex, Str);
       Result:= ReturnNone;
@@ -1926,10 +1972,11 @@ var
   H: Int64;
   Y1, Y2: Integer;
   Ed: TATSynEdit;
+  Strs: TATStrings;
   Lines: TStringList;
   ListPy: PPyObject;
+  NCount: integer;
   Res: boolean;
-  Strs: TATStrings;
 begin
   with AppPython.Engine do
     if Bool(PyArg_ParseTuple(Args, 'LiiO:replace_lines', @H, @Y1, @Y2, @ListPy)) then
@@ -1939,25 +1986,29 @@ begin
         exit(ReturnNone);
       Strs:= Ed.Strings;
       Strs.SetNewCommandMark;
+      NCount:= 0;
 
       Lines:= TStringList.Create;
       try
         PyListToStrings(ListPy, Lines);
         Res:= Strs.TextReplaceLines_UTF8(Y1, Y2, Lines);
-
-        Ed.UpdateMarkersOnDeleting(0, Y1, 0, Y2+1);
-        Ed.UpdateCaretsAndMarkersOnEditing(0,
-          Point(0, Y1),
-          Point(0, Y2+1),
-          Point(0, Lines.Count-(Y2-Y1+1)),
-          Point(0, Y1+Lines.Count));
-
-        Ed.DoEventChange(Y1);
+        NCount:= Lines.Count;
       finally
         FreeAndNil(Lines);
       end;
 
-      Ed.Update(true);
+      if Res then
+      begin
+        Ed.UpdateMarkersOnDeleting(0, Y1, 0, Y2+1);
+        Ed.UpdateCaretsAndMarkersOnEditing(0,
+          Point(0, Y1),
+          Point(0, Y2+1),
+          Point(0, NCount-(Y2-Y1+1)),
+          Point(0, Y1+NCount));
+
+        Ed.DoEventChange(Y1);
+        Ed.Update(true);
+      end;
 
       Result:= PyBool_FromLong(Ord(Res));
     end;
@@ -8527,7 +8578,7 @@ begin
           end;
         CANVAS_RECT_FILL:
           begin
-            C.FillRect(NX, NY, NX2, NY2);
+            CanvasFillRect(C, Rect(NX, NY, NX2, NY2), C.Brush.Color);
             Result:= ReturnNone;
           end;
         CANVAS_RECT_ROUND:
@@ -11089,18 +11140,20 @@ begin
     AddMethod('ed_get_text_all', @api_ed_get_text_all, '');
     AddMethod('ed_set_text_all', @api_ed_set_text_all, '');
     AddMethod('ed_get_text_sel', @api_ed_get_text_sel, '');
-    Addmethod('ed_get_text_line', @api_ed_get_text_line, '');
-    Addmethod('ed_set_text_line', @api_ed_set_text_line, '');
-    Addmethod('ed_get_text_substr', @api_ed_get_text_substr, '');
-    Addmethod('ed_get_line_len', @api_ed_get_line_len, '');
-    Addmethod('ed_get_line_count', @api_ed_get_line_count, '');
+    AddMethod('ed_get_text_line', @api_ed_get_text_line, '');
+    AddMethod('ed_set_text_line', @api_ed_set_text_line, '');
+    AddMethod('ed_get_text_substr', @api_ed_get_text_substr, '');
+    AddMethod('ed_get_line_len', @api_ed_get_line_len, '');
+    AddMethod('ed_get_line_count', @api_ed_get_line_count, '');
     AddMethod('ed_get_char_count', @api_ed_get_char_count, '');
+    AddMethod('ed_get_line_end', @api_ed_get_line_end, '');
+    AddMethod('ed_set_line_end', @api_ed_set_line_end, '');
     AddMethod('ed_delete', @api_ed_delete, '');
     AddMethod('ed_insert', @api_ed_insert, '');
     AddMethod('ed_replace', @api_ed_replace, '');
     AddMethod('ed_replace_lines', @api_ed_replace_lines, '');
 
-    Addmethod('ed_get_filename', @api_ed_get_filename, '');
+    AddMethod('ed_get_filename', @api_ed_get_filename, '');
     AddMethod('ed_get_prop', @api_ed_get_prop, '');
     AddMethod('ed_set_prop', @api_ed_set_prop, '');
     AddMethod('ed_folding', @api_ed_folding, '');

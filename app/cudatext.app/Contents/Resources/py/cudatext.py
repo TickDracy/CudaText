@@ -65,6 +65,11 @@ LINENUM_NONE   = 1
 LINENUM_EACH10 = 2
 LINENUM_EACH5  = 3
 
+LINEEND_NONE = 0
+LINEEND_WIN  = 1
+LINEEND_UNIX = 2
+LINEEND_MAC  = 3
+
 COLOR_NONE = 0x1FFFFFFF
 COLOR_DEFAULT = 0x20000000
 
@@ -1411,8 +1416,14 @@ class Editor:
     def get_char_count(self, max_chars, max_time):
         return ct.ed_get_char_count(self.h, max_chars, max_time)
 
-    def get_text_all(self):
-        return ct.ed_get_text_all(self.h)
+    def get_line_end(self, index):
+        return ct.ed_get_line_end(self.h, index)
+
+    def set_line_end(self, index, val):
+        return ct.ed_set_line_end(self.h, index, val)
+
+    def get_text_all(self, ends=False):
+        return ct.ed_get_text_all(self.h, ends)
 
     def set_text_all(self, text):
         return ct.ed_set_text_all(self.h, esc_z(text))
