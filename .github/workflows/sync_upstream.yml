@@ -14,13 +14,13 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # GITHUB_TOKEN cannot push commits that modify .github/workflows/*.
       # If upstream changes a workflow file, add a PAT with "repo" + "workflow"
       # scopes as the SYNC_TOKEN secret; it is used automatically when present.
       - name: Checkout fork
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: master
           fetch-depth: 0

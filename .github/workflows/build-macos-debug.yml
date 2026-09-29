@@ -19,7 +19,7 @@ jobs:
     steps:
       # ── 1. Checkout this fork (TickDracy/CudaText) as CudaText source ──
       - name: Checkout TickDracy/CudaText @ master (self)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: cudatext_src
           fetch-depth: 1
