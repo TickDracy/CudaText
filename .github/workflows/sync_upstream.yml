@@ -2,47 +2,54 @@ name: Sync Fork with Upstream
 
 on:
   schedule:
-    - cron: '45 23 * * 6'  # Every day Saturday at 23:45 UTC
+    - cron: '45 23 * * 6'  # Every Saturday at 23:45 UTC
   workflow_dispatch: 
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # GITHUB_TOKEN cannot push commits that modify .github/workflows/*.
+      # If upstream changes a workflow file, add a PAT with "repo" + "workflow"
+      # scopes as the SYNC_TOKEN secret; it is used automatically when present.
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
           ref: master
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/Alexey-T/CudaText.git
           git fetch upstream master
 
-      - name: Check for differences
-        id: diff_check
-        run: |
-          UPSTREAM_COMMIT=$(git rev-parse upstream/master)
-          FORK_COMMIT=$(git rev-parse origin/master)
-
-          echo "Upstream commit: $UPSTREAM_COMMIT"
-          echo "Fork commit:     $FORK_COMMIT"
-
-          if [ "$UPSTREAM_COMMIT" = "$FORK_COMMIT" ]; then
-            echo "in_sync=true" >> $GITHUB_OUTPUT
-            echo "✅ Fork is already up to date with upstream. Nothing to do."
-          else
-            echo "in_sync=false" >> $GITHUB_OUTPUT
-            echo "🔄 Differences detected. Proceeding with sync..."
-          fi
-
-      - name: Merge upstream into fork
-        if: steps.diff_check.outputs.in_sync == 'false'
+      - name: Rebase fork commits onto upstream
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git merge upstream/master --no-edit
-          git push origin master
-          echo "✅ Fork successfully synced with upstream."
+
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "Fork already contains upstream/master. Nothing to do."
+            exit 0
+          fi
+
+          echo "Fork-only commits:"
+          git log --oneline upstream/master..HEAD
+
+          # Linear history: replay fork-only commits on top of upstream (no merge commits)
+          if ! git rebase upstream/master; then
+            git rebase --abort
+            echo "::error::Rebase conflict. Resolve manually: git rebase upstream/master"
+            exit 1
+          fi
+
+          git push --force-with-lease=master:${{ github.sha }} origin master
+          echo "Fork synced with upstream."
