@@ -45,7 +45,7 @@ jobs:
 
       # ── 2. Checkout the upstream repo at the latest release tag ───────
       - name: Checkout upstream at latest release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: Alexey-T/CudaText
           ref: ${{ steps.release_tag.outputs.tag }}
